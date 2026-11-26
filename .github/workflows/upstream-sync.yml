@@ -1,0 +1,25 @@
+name: DerPlay upstream check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 8 * * 1'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check CarWithin upstream (read only)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 Tools/derplay/upstream.py check | tee upstream-report.txt
+          cat upstream-report.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-report
+          path: upstream-report.txt

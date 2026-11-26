@@ -1,0 +1,386 @@
+{
+  "upstream_commit": "dfe7cb8e705c05da6ab02e217e57bdd662a7cddb",
+  "upstream_version": "1.0.5 (17)",
+  "scope": "Unique first-line SettingsRow signatures, static coverage only; not feature count or runtime certification",
+  "files": {
+    "App/ReceiverViewController.swift": {
+      "source_sha256": "ef7a7db80a269b4ce1c9aa7df83dd58f37d764fb94aea848611ec2aa90b1196d",
+      "rows": [
+        ".action(CWL(\"不勾选，使用最近一次\"))",
+        ".action(CWL(\"从照片选择图标\"), icon: (\"photo\", .systemBlue))",
+        ".action(CWL(\"在本机浏览器打开\"))",
+        ".action(CWL(\"复制日志\"), icon: (\"doc.on.doc.fill\", .systemBlue))",
+        ".action(CWL(\"导入 P12 证书\"))",
+        ".action(CWL(\"恢复默认图标\"))",
+        ".action(CWL(\"更新到当前 IP\"))",
+        ".action(CWL(\"检查更新\"), icon: (\"arrow.clockwise.circle.fill\", .systemBlue), detail:",
+        ".action(CWL(\"测试本机传输能力\"), icon: (\"checkmark.shield.fill\", .systemPink), detail:",
+        ".action(CWL(\"版本记录\"), icon: (\"clock.arrow.circlepath\", .systemPurple))",
+        ".action(CWL(\"读取当前 Wi-Fi\"), icon: (\"antenna.radiowaves.left.and.right\", .systemBlue))",
+        ".action(choice.title)",
+        ".action(output.title, icon: (icons[output.rawValue], .systemOrange))",
+        ".action(preset.ssid, icon: (\"wifi\", .systemBlue))",
+        ".action(screen.title)",
+        ".action(secure ? CWL(\"复制 HTTPS 地址\") : CWL(\"复制 HTTP 地址\"))",
+        ".control(\"CarPlay 画面\", icon: (\"aspectratio\", .systemGreen), zeehoSEPlusCanvasControl))",
+        ".control(\"仪表目标帧率\", icon: (\"gauge.with.dots.needle.67percent\", .systemGreen), zeehoSEPlusFrameRateControl))",
+        ".control(\"自动查找仪表 IP\", icon: (\"network\", .systemBlue), outputMode == .zeehoSEPlus ? zeehoSEPlusAutomaticSwitch : zeeho62AutomaticSwitch))",
+        ".control(\"视频发送方式\", icon: (\"film\", .systemIndigo), zeehoSEPlusVideoModeControl))",
+        ".control(\"选择耳机或扬声器\", icon: (\"headphones\", .systemOrange), audioRoutePicker)",
+        ".control(CWL(\"CarPlay 图标大小\"), icon: (\"square.grid.2x2.fill\", .systemPurple), iconSizeControl)",
+        ".control(CWL(\"CarPlay 图标大小\"), icon: (\"square.grid.2x2.fill\", .systemPurple), iconSizeControl)])",
+        ".control(CWL(\"CarPlay 外观\"), icon: (\"circle.lefthalf.filled\", .systemBlue), appearanceControl)",
+        ".control(CWL(\"CarPlay 方向\"), icon: (\"rotate.right.fill\", .systemGreen), orientationControl))",
+        ".control(CWL(\"地址方案\"), icon: (\"globe\", .systemTeal), self.httpsMode)",
+        ".control(CWL(\"局域网接收页\"), icon: (\"globe\", .systemTeal), videoOutputSwitch)",
+        ".control(CWL(\"帧率\"), icon: (\"gauge.with.dots.needle.67percent\", .systemGreen), frameRateControl)",
+        ".control(CWL(\"开放网络（无密码）\"), openNetworkSwitch)",
+        ".control(CWL(\"当前输出\"), icon: (\"point.3.connected.trianglepath.dotted\", .systemIndigo), headUnitOutput))",
+        ".control(CWL(\"显示触摸点\"), icon: (\"hand.tap.fill\", .systemOrange), showTouchesSwitch)",
+        ".control(CWL(\"显示车辆按钮\"), icon: (\"car.side.fill\", .systemTeal), carButtonSwitch)",
+        ".control(CWL(\"浏览器性能\"), icon: (\"speedometer\", .systemBlue), performanceControl)",
+        ".control(CWL(\"画中画开启时机\"), icon: (\"pip.fill\", .systemIndigo), pictureInPictureTiming)",
+        ".control(CWL(\"画面尺寸\"), icon: (\"aspectratio.fill\", .systemGreen), sizeModeControl)",
+        ".control(CWL(\"画面比例\"), icon: (\"aspectratio\", .systemGreen), aspectRatioControl))",
+        ".control(CWL(\"自动重启\"), icon: (\"arrow.clockwise\", .systemGreen), autoRestartSwitch)",
+        ".control(CWL(\"蓝牙引导\"), icon: (\"dot.radiowaves.right\", .systemBlue), bluetoothSetupSwitch)",
+        ".control(CWL(\"视频编码\"), icon: (\"film.fill\", .systemGreen), codecControl)",
+        ".control(CWL(\"锁屏与后台继续运行\"), icon: (\"lock.fill\", .systemPurple), keepAliveSwitch)",
+        ".control(CWL(\"驾驶位\"), icon: (\"steeringwheel\", .systemTeal), driveControl)",
+        ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemGreen), resolutionControl))",
+        ".externalLink(CWL(\"GitHub 项目\"), icon: (\"chevron.left.forwardslash.chevron.right\", .systemIndigo))",
+        ".externalLink(CWL(\"关注作者\"), icon: (\"heart.fill\", .systemRed), detail: CWL(\"抖音\"))",
+        ".externalLink(CWL(\"反馈与建议\"), icon: (\"bubble.left.and.bubble.right.fill\", .systemBlue))",
+        ".externalLink(CWL(\"注册或管理域名\"), icon: (\"link\", .systemBlue))",
+        ".field(\"Token\", self.httpsTokenField)",
+        ".field(CWL(\"HTTP 端口\"), videoOutputPortField)",
+        ".field(CWL(\"HTTPS 端口\"), self.secureVideoOutputPortField), self.browserAddressRow(secure: true)",
+        ".field(CWL(\"Wi-Fi 名称\"), ssidField)",
+        ".field(CWL(\"仪表 IP 地址\"), activeNinebotAddressField, placeholder: outputMode == .ninebot43 ? \"192.168.169.1\" : \"192.168.1.1\")",
+        ".field(CWL(\"仪表 IP 地址\"), activeZeehoAddressField, placeholder: \"192.168.0.1\"))",
+        ".field(CWL(\"仪表 IP 地址\"), cfmotoAddressField, placeholder: \"留空尝试 .1\")",
+        ".field(CWL(\"仪表 IP 地址\"), tailingAddressField, placeholder: \"192.168.1.1\")",
+        ".field(CWL(\"兼容信道\"), channelField, placeholder: \"36\")",
+        ".field(CWL(\"域名\"), self.httpsDomainField, placeholder: \"name.duckdns.org\")",
+        ".field(CWL(\"密码\"), passwordField, placeholder: CWL(\"开放网络留空\"))",
+        ".field(CWL(\"播放端口\"), videoOutputPortField)",
+        ".field(CWL(\"本机 IP 地址\"), ipField))",
+        ".field(CWL(\"车机 IP 地址\"), carLifeAddressField, placeholder: CWL(\"留空自动发现\"), icon: (\"network\", .systemBlue))",
+        ".field(CWL(\"车辆名称\"), nameField, placeholder: \"CarWithin\")",
+        ".guide(CWL(\"仪表没有画面\"), icon: (\"display\", .systemPurple)",
+        ".guide(CWL(\"卡在正在连接\"), icon: (\"arrow.clockwise\", .systemOrange)",
+        ".guide(CWL(\"启动顺序\"), icon: (\"play.circle\", .systemBlue), startup)",
+        ".guide(CWL(\"浏览器\"), icon: (\"globe\", .systemTeal)",
+        ".guide(CWL(\"端口被占用\"), icon: (\"exclamationmark.triangle\", .systemOrange)",
+        ".guide(CWL(\"网页打不开或没有画面\"), icon: (\"exclamationmark.circle\", .systemOrange)",
+        ".guide(CWL(\"让 iPhone 加入 Wi-Fi\"), icon: (\"wifi\", .systemBlue)",
+        ".guide(CWL(\"车机或仪表\"), icon: (\"car.fill\", .systemIndigo)",
+        ".guide(CWL(\"选择同名预设\"), icon: (\"list.bullet\", .systemBlue)",
+        ".guide(fiveInch ? CWL(\"没有画面时\") : CWL(\"九号出行需保留后台\")",
+        ".info(\"仪表 IP\", \"连接时自动匹配，结果见日志\"))",
+        ".info(\"当前发送方式\", selectedZeehoVideoMode.title))",
+        ".info(\"当前声音路由\", audioRouteDescription)",
+        ".info(CWL(\"MFi 身份\"), identity != nil ? CWL(\"已载入\") : CWL(\"未载入\"))",
+        ".info(CWL(\"仪表画面\"), \"\\(cfmoto.width)×\\(cfmoto.height) · H.264 · PXC(TCP) · \\(cfmoto.fps) FPS\")])",
+        ".info(CWL(\"仪表画面\"), \"\\(size) · H.264 · 目标 \\(selectedZeehoFrameRate.rawValue) FPS\")])",
+        ".info(CWL(\"仪表画面\"), CWL(\"480×272 · JPEG · 最高 20 FPS\"))",
+        ".info(CWL(\"仪表画面\"), format)",
+        ".info(CWL(\"使用说明\"), \"全宽适合本机 1600×770 仪表。直传兼容性待实测，黑屏时改回兼容转码。25 FPS 自动使用转码。锁屏时暂停手机预览，后台保持需开启。\"))",
+        ".info(CWL(\"声音输出\"), CWL(\"由 iPhone 输出\"))",
+        ".info(CWL(\"本机 CarPlay\"), \"960×544 · H.264 · 30 FPS\")",
+        ".info(CWL(\"正在读取照片…\"), \"\"))",
+        ".info(CWL(\"浏览器页面\"), BrowserReceiverPage.version)",
+        ".info(CWL(\"设备\"), \"\\(model) · iOS \\(UIDevice.current.systemVersion)\")",
+        ".info(CWL(\"证书文件\"), (try? HTTPSConfiguration.secret(\"certificate\")) == nil ? CWL(\"尚未导入\") : CWL(\"已保存，启动时校验\"))",
+        ".note(airPlayStatus)",
+        ".note(carLifeStatus)])",
+        ".note(cfmotoStatus)",
+        ".note(ninebotStatus)",
+        ".note(passwordStatus)])) }",
+        ".note(self.httpsStatus), .note(self.portStatus)]))",
+        ".note(tailingStatus)])",
+        ".note(zeehoStatus))",
+        ".page(\"电池与 BMS\", icon: (\"battery.100\", .systemGreen))",
+        ".page(CWL(\"HTTPS 设置\"), icon: (\"lock.shield\", .systemBlue))",
+        ".page(CWL(\"Wi-Fi 与网络\"), icon: (\"wifi\", .systemBlue), detail:",
+        ".page(CWL(\"Wi-Fi 预设\"), icon: (\"list.bullet\", .systemBlue), detail:",
+        ".page(CWL(\"使用说明\"), icon: (\"book.fill\", .systemOrange))",
+        ".page(CWL(\"关于\"), icon: (\"info.circle.fill\", .systemGray))",
+        ".page(CWL(\"声音\"), icon: (\"speaker.wave.2.fill\", .systemOrange), detail:",
+        ".page(CWL(\"日志\"), icon: (\"doc.text.fill\", .systemGray))",
+        ".page(CWL(\"添加 Wi-Fi\"), icon: (\"plus\", .systemGreen))",
+        ".page(CWL(\"画面\"), icon: (\"rectangle.on.rectangle\", .systemGreen), detail:",
+        ".page(CWL(\"编辑当前预设\"), icon: (\"pencil\", .systemBlue))",
+        ".page(CWL(\"证书安装说明\"), icon: (\"doc.text\", .systemBlue))",
+        ".page(CWL(\"诊断与实验\"), icon: (\"stethoscope\", .systemTeal))",
+        ".page(CWL(\"请我喝杯咖啡\"), icon: (\"cup.and.saucer.fill\", .systemOrange))",
+        ".page(CWL(\"赞赏与支持\"), icon: (\"hands.sparkles.fill\", .systemOrange))",
+        ".page(CWL(\"车机屏幕\"), icon: (\"display\", .systemGreen), detail:",
+        ".page(CWL(\"车辆\"), icon: (\"car.fill\", .systemTeal))",
+        ".page(CWL(\"输出设置\"), icon: (\"slider.horizontal.3\", .systemGray))",
+        ".page(screen.title, detail:",
+        ".view(logView)])",
+        ".view(modeControl)]))",
+        ".view(row))",
+        ".view(self.aboutIdentityCard())])"
+      ]
+    },
+    "App/ANTBMSController.swift": {
+      "source_sha256": "57fb0f87736aa35ba5f527bbb7aad1d2bed1a6dba791cf796dcf5042a4dca0dd",
+      "rows": [
+        ".action(\"常用：显示全部六项\", icon: (\"square.grid.2x2\", .systemBlue))",
+        ".action(\"开启读取并查找设备\", icon: (\"antenna.radiowaves.left.and.right\", .systemBlue))",
+        ".action(\"忘记当前 BMS\", destructive: true)",
+        ".action(\"扫描附近 BMS\", icon: (\"antenna.radiowaves.left.and.right\", .systemBlue))",
+        ".action(\"精简：电量、总压、压差\", icon: (\"minus.circle\", .systemBlue))",
+        ".action(device.name, detail:",
+        ".control(\"字号\", self.bmsCardSize)",
+        ".control(\"显示位置\", self.bmsPosition)",
+        ".control(\"背景\", self.bmsCardBackground)",
+        ".control(\"读取并显示 BMS\", self.bmsEnabledSwitch)",
+        ".control(field.title, control)",
+        ".info(\"已记住的设备\", self.bmsClient.selectedName)",
+        ".info(\"暂无设备\", \"点击上方扫描\")] : devices))",
+        ".note(self.bmsCardPreviewStatus), .view(self.bmsCardPreview)",
+        ".note(self.bmsDetails)])",
+        ".note(self.bmsStatus)",
+        ".page(\"卡片显示\", icon: (\"rectangle.topthird.inset.filled\", .systemBlue), detail:",
+        ".page(\"字段顺序\", icon: (\"arrow.up.arrow.down\", .systemBlue))",
+        ".page(\"电池详情\")",
+        ".page(\"电池详情\", icon: (\"list.bullet.rectangle\", .systemGray))",
+        ".page(\"连接设备\", icon: (\"antenna.radiowaves.left.and.right\", .systemBlue), detail:",
+        ".view(self.bmsLiveSummary)])"
+      ]
+    }
+  },
+  "approved_relocations": {
+    ".control(CWL(\"CarPlay 外观\"), icon: (\"circle.lefthalf.filled\", .systemBlue), appearanceControl)": {
+      "reason": "迁移为独立页面",
+      "required_tokens": [
+        "carPlayAppearancePage()",
+        "appearanceChanged()"
+      ]
+    },
+    ".control(CWL(\"当前输出\"), icon: (\"point.3.connected.trianglepath.dotted\", .systemIndigo), headUnitOutput))": {
+      "reason": "迁移为主页互联方式",
+      "required_tokens": [
+        "interconnectPage()",
+        "HeadUnitOutput.menuOrder"
+      ]
+    },
+    ".control(CWL(\"驾驶位\"), icon: (\"steeringwheel\", .systemTeal), driveControl)": {
+      "reason": "用户明确删除独立入口；保留兼容参数",
+      "required_tokens": [
+        "config.rightHandDrive = driveControl.selectedSegmentIndex == 1",
+        "dockPositionPage()"
+      ]
+    },
+    ".externalLink(CWL(\"关注作者\"), icon: (\"heart.fill\", .systemRed), detail: CWL(\"抖音\"))": {
+      "reason": "R44 用户明确要求移除关于页面入口",
+      "required_tokens": []
+    },
+    ".externalLink(CWL(\"反馈与建议\"), icon: (\"bubble.left.and.bubble.right.fill\", .systemBlue))": {
+      "reason": "用户明确删除，不恢复",
+      "required_tokens": []
+    },
+    ".field(CWL(\"车辆名称\"), nameField, placeholder: \"CarWithin\")": {
+      "reason": "品牌替换",
+      "required_tokens": [
+        ".field(CWL(\"车辆名称\"), nameField, placeholder: \"DerPlay\")"
+      ]
+    },
+    ".page(CWL(\"HTTPS 设置\"), icon: (\"lock.shield\", .systemBlue))": {
+      "reason": "迁移至连接设置",
+      "required_tokens": [
+        ".page(\"HTTPS 设置\"",
+        "httpsSettingsPage()"
+      ]
+    },
+    ".page(CWL(\"Wi-Fi 与网络\"), icon: (\"wifi\", .systemBlue), detail:": {
+      "reason": "迁移至连接设置",
+      "required_tokens": [
+        ".page(\"Wi-Fi 与网络\"",
+        "wifiPage()"
+      ]
+    },
+    ".page(CWL(\"Wi-Fi 预设\"), icon: (\"list.bullet\", .systemBlue), detail:": {
+      "reason": "R7 用户取消独立管理入口，保留网络表单、凭据与存储",
+      "required_tokens": [
+        "self.wifiPage()",
+        "WiFiPresetStore.upsert",
+        "WiFiCredentials.save"
+      ]
+    },
+    ".page(CWL(\"画面\"), icon: (\"rectangle.on.rectangle\", .systemGreen), detail:": {
+      "reason": "R7 画面参数直接进入连接设置",
+      "required_tokens": [
+        "self.pictureRatioPage()",
+        "self.carPlayAppearancePage()",
+        "self.dockPositionPage()"
+      ]
+    },
+    ".page(CWL(\"请我喝杯咖啡\"), icon: (\"cup.and.saucer.fill\", .systemOrange))": {
+      "reason": "R44 用户明确要求移除关于页面入口",
+      "required_tokens": []
+    },
+    ".page(CWL(\"赞赏与支持\"), icon: (\"hands.sparkles.fill\", .systemOrange))": {
+      "reason": "迁移至开源致谢，原名单页保留",
+      "required_tokens": [
+        "原项目贡献者",
+        "ContributionsViewController()"
+      ]
+    },
+    ".page(CWL(\"输出设置\"), icon: (\"slider.horizontal.3\", .systemGray))": {
+      "reason": "R7 协议专属入口或直接可编辑字段",
+      "required_tokens": [
+        ".page(\"浏览器设置\"",
+        ".page(\"AirPlay 设置\"",
+        ".page(\"仪表设置\"",
+        "carLifeAddressField",
+        "self.headUnitPage()"
+      ]
+    },
+    ".control(CWL(\"画面尺寸\"), icon: (\"aspectratio.fill\", .systemGreen), sizeModeControl)": {
+      "reason": "Build 10 R7 approved menu relocation",
+      "required_tokens": [
+        "private func pictureRatioPage()",
+        "self.sizeModeControl.selectedSegmentIndex = index == 0 ? 0 : 1"
+      ]
+    },
+    ".guide(CWL(\"选择同名预设\"), icon: (\"list.bullet\", .systemBlue)": {
+      "reason": "Build 10 R7 approved menu relocation",
+      "required_tokens": [
+        "确认当前网络",
+        "self.wifiPage()"
+      ]
+    },
+    ".page(CWL(\"声音\"), icon: (\"speaker.wave.2.fill\", .systemOrange), detail:": {
+      "reason": "Build 10 R7 approved menu relocation",
+      "required_tokens": [
+        ".page(\"声音设置\"",
+        "self.soundPage()",
+        "!isLocalCarPlayOnly"
+      ]
+    },
+    ".page(CWL(\"车辆\"), icon: (\"car.fill\", .systemTeal))": {
+      "reason": "Build 10 R7 approved menu relocation",
+      "required_tokens": [
+        ".page(\"车辆设置\"",
+        "self.vehiclePage()"
+      ]
+    },
+    ".note(airPlayStatus)": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(airPlayStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".note(carLifeStatus)])": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(carLifeStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".note(cfmotoStatus)": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(cfmotoStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".note(ninebotStatus)": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(ninebotStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".note(tailingStatus)])": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(tailingStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".note(zeehoStatus))": {
+      "required_tokens": [
+        "func refreshDashboardStatus()",
+        "labels.append(zeehoStatus)",
+        "glassDashboardState.statusLines = lines"
+      ],
+      "reason": "R30 live status moved into existing home settings card"
+    },
+    ".control(\"CarPlay 画面\", icon: (\"aspectratio\", .systemGreen), zeehoSEPlusCanvasControl))": {
+      "required_tokens": [
+        ".control(\"CarPlay 画面\", icon: (\"aspectratio\", .systemBlue), zeehoSEPlusCanvasControl))"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(\"仪表目标帧率\", icon: (\"gauge.with.dots.needle.67percent\", .systemGreen), zeehoSEPlusFrameRateControl))": {
+      "required_tokens": [
+        ".control(\"仪表目标帧率\", icon: (\"gauge.with.dots.needle.67percent\", .systemOrange), zeehoSEPlusFrameRateControl))"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(CWL(\"帧率\"), icon: (\"gauge.with.dots.needle.67percent\", .systemGreen), frameRateControl)": {
+      "required_tokens": [
+        ".control(CWL(\"帧率\"), icon: (\"gauge.with.dots.needle.67percent\", .systemOrange), frameRateControl)"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(CWL(\"画面比例\"), icon: (\"aspectratio\", .systemGreen), aspectRatioControl))": {
+      "required_tokens": [
+        ".control(CWL(\"画面比例\"), icon: (\"aspectratio\", .systemBlue), aspectRatioControl))"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(CWL(\"视频编码\"), icon: (\"film.fill\", .systemGreen), codecControl)": {
+      "required_tokens": [
+        ".control(CWL(\"视频编码\"), icon: (\"film.fill\", .systemIndigo), codecControl)"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemGreen), resolutionControl))": {
+      "required_tokens": [
+        ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemBlue), resolutionControl))"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".page(CWL(\"诊断与实验\"), icon: (\"stethoscope\", .systemTeal))": {
+      "reason": "R42 approved icon color only",
+      "required_tokens": [
+        ".page(CWL(\"诊断与实验\"), icon: (\"stethoscope\", .systemRed))",
+        "self.diagnosticsPage()"
+      ]
+    },
+    ".externalLink(CWL(\"GitHub 项目\"), icon: (\"chevron.left.forwardslash.chevron.right\", .systemIndigo))": {
+      "reason": "R44 用户明确要求移除关于页面入口",
+      "required_tokens": []
+    },
+    ".action(CWL(\"从照片选择图标\"), icon: (\"photo\", .systemBlue))": {
+      "reason": "R45 vehicle menu artwork only",
+      "required_tokens": [
+        "usesScooterArtwork ? vehicleSettingsIcon : (\"photo\", .systemBlue)"
+      ]
+    },
+    ".action(CWL(\"恢复默认图标\"))": {
+      "reason": "R45 vehicle menu artwork only",
+      "required_tokens": [
+        "button.append(.action(CWL(\"恢复默认图标\"), icon: usesScooterArtwork ? vehicleSettingsIcon : nil)"
+      ]
+    },
+    ".control(CWL(\"显示车辆按钮\"), icon: (\"car.side.fill\", .systemTeal), carButtonSwitch)": {
+      "reason": "R45 vehicle menu artwork only",
+      "required_tokens": [
+        "icon: vehicleSettingsIcon, carButtonSwitch"
+      ]
+    }
+  }
+}

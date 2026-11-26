@@ -1,0 +1,118 @@
+name: Build DerPlay unsigned IPA
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: macOS runner (choose Intel if ARM64 queue is busy)
+        type: choice
+        required: false
+        default: macos-15
+        options:
+          - macos-15
+          - macos-15-intel
+concurrency:
+  group: derplay-ipa-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ${{ inputs.runner == 'macos-15-intel' && 'macos-15-intel' || 'macos-15' }}
+    timeout-minutes: 45
+    env:
+      TDS_BUNDLE_IDENTIFIER: com.derplay.app
+      TDS_DEVELOPMENT_TEAM: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight and extension smoke test
+        run: |
+          python3 Tools/derplay/preflight.py
+          python3 -m unittest discover -s Tools/derplay -p "test_*.py"
+          python3 Tools/derplay/test_build_workflow.py
+          python3 Tools/derplay/test_frozen_baseline.py
+          python3 Tools/derplay/test_carlife_startup.py
+          python3 Tools/derplay/test_branding.py
+          python3 Tools/derplay/test_browser_resize.py
+          swiftc -swift-version 5 DerPlay/Extensions/DynamicDisplayState.swift Tools/derplay/DynamicDisplaySmoke.swift -o /tmp/derplay-dynamic-smoke
+          /tmp/derplay-dynamic-smoke
+          swiftc -swift-version 5 DerPlay/Extensions/DynamicDisplayWire.swift Tools/derplay/DynamicDisplayWireSmoke.swift -o /tmp/derplay-dynamic-wire
+          /tmp/derplay-dynamic-wire
+          swiftc -swift-version 5 App/CarPlayInfo.swift DerPlay/Extensions/DynamicDisplayWire.swift Sources/TDSCarKitCore/Localization.swift Tools/derplay/DynamicDisplayInfoSmoke.swift -o /tmp/derplay-info-smoke
+          /tmp/derplay-info-smoke
+          swiftc -swift-version 5 DerPlay/Extensions/DynamicDisplayState.swift DerPlay/Extensions/DynamicDisplayWire.swift DerPlay/Extensions/DynamicDisplayCoordinator.swift Tools/derplay/DynamicDisplayCoordinatorSmoke.swift -o /tmp/derplay-dynamic-coordinator
+          /tmp/derplay-dynamic-coordinator
+          swiftc -swift-version 5 App/DerPlayDisplayEventReplies.swift Sources/TDSCarKitCore/Localization.swift Sources/TDSCarKitCore/Binary.swift Sources/TDSCarKitCore/RTSP.swift Tools/derplay/DisplayEventRepliesSmoke.swift -o /tmp/derplay-display-replies
+          /tmp/derplay-display-replies
+          python3 Tools/derplay/test_display_event_bridge.py
+          swiftc -swift-version 5 App/DerPlayCarLifeDisplay.swift Tools/derplay/CarLifeDisplaySmoke.swift -o /tmp/derplay-carlife-display
+          /tmp/derplay-carlife-display
+          swiftc -swift-version 5 App/ResolutionEvidence.swift Tools/derplay/ResolutionEvidenceSmoke.swift -o /tmp/derplay-resolution-evidence
+          /tmp/derplay-resolution-evidence
+          swiftc -swift-version 5 Sources/TDSCarKitCore/Localization.swift App/AppReleaseService.swift Tools/UpdateSmoke.swift -o /tmp/derplay-update-smoke
+          /tmp/derplay-update-smoke
+          swiftc -swift-version 5 Sources/TDSCarKitCore/Localization.swift App/CarScreenStore.swift Tools/derplay/CarScreenStoreSmoke.swift -o /tmp/derplay-screen-store-smoke
+          /tmp/derplay-screen-store-smoke
+          swiftc -swift-version 5 App/WiFiPresetStore.swift Tools/derplay/WiFiPresetSmoke.swift -o /tmp/derplay-wifi-preset
+          /tmp/derplay-wifi-preset
+          swiftc -swift-version 5 App/DerPlayProtocolPreferences.swift Tools/derplay/ProtocolPreferencesSmoke.swift -o /tmp/derplay-protocol-preferences
+          /tmp/derplay-protocol-preferences
+          swiftc -swift-version 5 DerPlay/Extensions/DeviceProfilePolicy.swift App/DerPlayCarLifeDisplay.swift App/DerPlayProtocolPreferences.swift Tools/derplay/DeviceProfilePolicySmoke.swift -o /tmp/derplay-device-profile
+          /tmp/derplay-device-profile
+          swift test --filter PairSetupTests
+          python3 Tools/derplay/test_dashboard.py
+          python3 Tools/derplay/test_feedback.py
+          python3 Tools/derplay/test_settings.py
+          python3 Tools/derplay/test_identity.py
+          python3 Tools/derplay/test_version.py
+          python3 Tools/derplay/test_icons.py
+          python3 Tools/derplay/test_upstream.py
+          swiftc -swift-version 5 App/DerPlayExtensionAPI.swift Tools/derplay/ExtensionSmoke.swift -o /tmp/derplay-extension-smoke
+          /tmp/derplay-extension-smoke
+          swiftc -swift-version 5 App/DerPlayExtensionAPI.swift App/DerPlayExtensionSession.swift Tools/derplay/SessionSmoke.swift -o /tmp/derplay-session-smoke
+          /tmp/derplay-session-smoke
+      - name: Generate project
+        run: |
+          xcodebuild -version
+          if [ -d App/BundledIdentity ] && [ -n "$(find App/BundledIdentity -type f -print -quit)" ]; then
+            echo "Do not include private accessory identity materials in CI artifacts."
+            exit 1
+          fi
+          python3 Tools/generate_project.py
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dist
+          xcodebuild -project TDSCarKit.xcodeproj -scheme TDSCarKit -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/derplay CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ARCHS=arm64 build 2>&1 | tee dist/build.log
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=build/derplay/Build/Products/Release-iphoneos/TDSCarKit.app
+          test -d "$app"
+          mkdir -p dist/Payload
+          cp -R "$app" dist/Payload/
+          version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$app/Info.plist")
+          cd dist
+          ipa="DerPlay-${version}-build${build}.ipa"
+          zip -qry "$ipa" Payload
+          shasum -a 256 "$ipa" > SHA256.txt
+          rm -rf Payload
+      - name: Verify IPA identity and architecture
+        run: python3 Tools/derplay/verify_ipa.py dist/DerPlay-*-build*.ipa --source-plist App/Info.plist --report dist/BUILD-INFO.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DerPlay-build
+          path: |
+            dist/build.log
+            dist/BUILD-INFO.json
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: DerPlay-IPA
+          path: |
+            dist/DerPlay-*-build*.ipa
+            dist/SHA256.txt
+            dist/BUILD-INFO.json
