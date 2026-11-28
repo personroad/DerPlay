@@ -216,7 +216,7 @@ import Foundation
         let tier = store.resolutionIndex(scope: "output-1", evidence: raw, fallback: 2, count: areas.count)
         var negotiation = DerPlayCarLifeDisplay.Negotiation(area: areas[tier])
         let raster = negotiation.selection(width: 1080, height: 2210)!
-        precondition(tier == 1 && raster.width == 1370 && raster.height == 670)
+        precondition(tier == 1 && raster.width == 528 && raster.height == 1080)
         precondition(negotiation.commit(width: raster.width, height: raster.height))
         precondition(negotiation.selection(width: 1920, height: 1080)?.width == raster.width)
         for i in 0..<32 {

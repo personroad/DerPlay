@@ -1,0 +1,62 @@
+--- a/App/BackgroundKeepAlive.swift
++++ b/App/BackgroundKeepAlive.swift
+@@ -29,11 +29,24 @@
+     }
+     private static func setHolding(_ value: Bool) { lock.lock(); holding = value; lock.unlock() }
+ 
++    /// Serialize the existing idle-release decision with keep-alive acquisition.
++    /// The body must not re-enter holdsAudioSession or setHolding.
++    static func withAudioSessionHoldingSnapshot(_ body: (Bool) -> Void) {
++        lock.lock(); defer { lock.unlock() }
++        body(holding)
++    }
++
+     @discardableResult
+     func start() -> Bool {
+         guard !isRunning else { return true }
+         Self.setHolding(true)
+-        guard play(reason: nil) else { Self.setHolding(false); return false }
++        guard play(reason: nil) else {
++            player?.stop()
++            player = nil
++            Self.setHolding(false)
++            // Do not initiate a new session deactivation until PiP ownership is tracked.
++            return false
++        }
+         recovery.start()
+         generation = UUID()
+         let token = generation
+--- a/App/CarPlayAudio.swift
++++ b/App/CarPlayAudio.swift
+@@ -255,18 +255,19 @@
+     /// plays in it: deactivating would stop that player too and iOS would suspend the app.
+     private static func deactivateSessionIfIdle(releaseSpeakerOverride: Bool = false) {
+         guard playingStreams == 0 else { return }
+-        let session = AVAudioSession.sharedInstance()
+-        let keepAlive = BackgroundKeepAlive.holdsAudioSession
+-        if hasSpeakerOverride {
+-            // A CarPlay audio format change tears down the old RTP stream. Keep the
+-            // output route through that replacement so iOS does not renegotiate again.
+-            guard releaseSpeakerOverride else { return }
+-            hasSpeakerOverride = false
+-            try? session.overrideOutputAudioPort(.none)
+-            try? session.setCategory(.playback, mode: .default, options: keepAlive ? [.mixWithOthers] : [])
+-        }
+-        guard !keepAlive else { return }
+-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
++        BackgroundKeepAlive.withAudioSessionHoldingSnapshot { keepAlive in
++            let session = AVAudioSession.sharedInstance()
++            if hasSpeakerOverride {
++                // A CarPlay audio format change tears down the old RTP stream. Keep the
++                // output route through that replacement so iOS does not renegotiate again.
++                guard releaseSpeakerOverride else { return }
++                hasSpeakerOverride = false
++                try? session.overrideOutputAudioPort(.none)
++                try? session.setCategory(.playback, mode: .default, options: keepAlive ? [.mixWithOthers] : [])
++            }
++            guard !keepAlive else { return }
++            try? session.setActive(false, options: .notifyOthersOnDeactivation)
++        }
+     }
+     #endif
+ }

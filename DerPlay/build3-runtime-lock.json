@@ -125,7 +125,8 @@
     "Sources/TDSCarKitCore/Vendor/BigInt/Subtraction.swift": "109baeb5d8699886a17524ec309a08e97a63ef7ae81f50935eaed9f1c39f976c",
     "Sources/TDSCarKitCore/Vendor/BigInt/Words and Bits.swift": "54d49458dd53619b6ff14077bf76cfa322d3bb154febba3c90f67ff6f52b669e",
     "Sources/TDSCarKitCore/VideoCodec.swift": "a0ac811eb6eed583a260401f36a34059b946ba9382f121bf4e02e6cd902f15c0",
-    "ThirdParty/BigInt-LICENSE.md": "c3dfd0dca467f6d198bf365a954d4be6cb6b0e3d848ec724f86e5f579ca38d9e"
+    "ThirdParty/BigInt-LICENSE.md": "c3dfd0dca467f6d198bf365a954d4be6cb6b0e3d848ec724f86e5f579ca38d9e",
+    "DerPlay/Extensions/NetworkRecoveryPolicy.swift": "ee7a842cb1e1102fbd9f6c2693083b9d6ba11a9094d3e9962224cecf16df435c"
   },
   "approved_exceptions": {
     "App/CarLifeOutput.swift": {
@@ -135,18 +136,18 @@
     },
     "App/NativeReceiver.swift": {
       "original_sha256": "85cdd5a8f51208acac69b8ad27e16825578165e987f899728a42ddd2293cebec",
-      "approved_sha256": "c0767791b4d68fc2dbdd0b75430ee1d7a463b45cf5e0c232dd6b69769ad6a7bf",
-      "reason": "Build 6 user-approved recovery: SRP encoding compatibility, resolution evidence and merged UI. Build 6 continued: Propagate serialized /info display area count after initial SETUP. Build 8 continuation: single post-probe keyframe observation and timeout ledger invalidation, experimental browser only. Build 10 checkpoint 3: browser experiment passive command/phase diagnostics only.; Build 10 R12 continuation: session-bound browser display and struggling callbacks only; no wire changes.; R16 user-approved raw screen geometry resolution tier matching for CarLife automatic mode."
+      "approved_sha256": "fd14848d4ce893e3e83d5cc39c48a2c54d3dcb0dde8235601e82a9eb9fb589fa",
+      "reason": "Build 6 user-approved recovery: SRP encoding compatibility, resolution evidence and merged UI. Build 6 continued: Propagate serialized /info display area count after initial SETUP. Build 8 continuation: single post-probe keyframe observation and timeout ledger invalidation, experimental browser only. Build 10 checkpoint 3: browser experiment passive command/phase diagnostics only.; Build 10 R12 continuation: session-bound browser display and struggling callbacks only; no wire changes.; R16 user-approved raw screen geometry resolution tier matching for CarLife automatic mode. R95 thread-safe last authenticated video-frame timestamp; records media arrival even when local preview decoding is suspended, and clears it with the session. R150: browser-only initial viewport preflight before the first CarPlay /info handshake; 45-second safe fallback; no live View Area transition. R151: preserve requested ratio, escalate clarity within protocol ceilings, reject incompatible geometry. R152: browser auto geometry timeout fails closed; session-bound resolution callback and startup status guard."
     },
     "App/ReceiverViewController.swift": {
       "original_sha256": "8bc8b2e68ae19c64de0727877ba627c382e0df6807a0b6327f39174e6701bcb9",
-      "approved_sha256": "af366791ef5765aa226a50170c3bf31671ffb43676dd20349b1a5e87200c11ed",
-      "reason": "Build 9 round 4 user-approved presentation-only Liquid Glass migration; preserve runtime callbacks and settings. Independent driving control intentionally removed; stored compatibility parameter retained. Build 9 round 5 approved UI continuation: independent software theme and isolated system appearance source, settings entry relocation and presentation-only actions.; Build 9 round 6 user-approved Dock startup preference, opt-in per-area status bar edge; auto preserves legacy behavior.; Build 10 round 6 user-approved restore DerPlay release UI/service, separate CarLife diagnostics, settings startup guards, cancel icon (no protocol changes).; Build 10 R7 confirmed flat mode-specific UI, ratio merger and browser experiment relocation, no protocol changes.; Build 10 R8 protocol-scoped preferences: switch projection and control restore, no engine changes.; Build 10 R9 replay pending preference transitions before initializing controls.; Build 10 R10 model-specific shared instrument address control restoration; existing controller callbacks retained.; Build 10 R11 continuation: isolate current browser screen planning from geometry-keyed history; no protocol engine changes.; Build 10 R12 continuation: session-bound browser display and struggling callbacks only; no wire changes.; R16 user-approved raw screen geometry resolution tier matching for CarLife automatic mode.; R17 screen-group icon width projection and restore before native startup.; R21 user-selected layout field restore and scoped edits for CarLife automatic mode; preserve unrelated preferences.; R23 screen-specific picture preference within CarLife automatic negotiation, isolated ratio menu and decoder limits.; R25 restore missing sound preference from selectedSoundOutput, not forced effective route; no audio routing change.; R27 user-approved dashboard cleanup, move live connection controls to settings, preserve BMS.; Build 11 R28 user-approved remove dashboard controls; transient top-right fullscreen overlay, safe exit, preserve touch forwarding and BMS.; R29 user-approved rounded title, 80pt primary button and stronger shadows; presentation only.; R30 user-approved neutral frosted appearance and home status projection.; R31 approved SU7 default OEM icon selection at startup, preserve custom icon precedence and original fallback.; R32 fix reported sheet background and icon contrast; presentation only.; R33 user-approved native AirPlay picker relocation and removal of redundant ratio menu label; retain persisted indices.; R34 user-approved native system bold title, preserve shadow and layout.; R35 safe legacy Wi-Fi channel initialization.; R36 preserve same protocol icons in locked read-only rows; no runtime changes. R38 user-confirmed interconnect display order: AirPlay second, Tailing above Ninebot; persisted enum raw values unchanged.; R39 user-supplied and approved brand artwork, presentation only.; R40 user-confirmed planned protocol brand icons, readonly only.; R42 approved settings icon palette only. R43 user-approved AirPlay status and retry visibility only.; R44 user-approved about/menu and local preview/fullscreen orientation changes.; R45 approved opaque animated settings, row icons, Wi-Fi preset integration and scooter artwork. R45 approved software-theme vehicle menu artwork only. R45 user-approved restore original Tailing visible position and amber phone icon."
+      "approved_sha256": "80d1410050a0b32f3813c0211c3b71eb7dc5ce7f327e7fc34eb30fe5c00d87a2",
+      "reason": "R97: add foreground AVPlayer buffer-depth diagnostics; no playback decisions or route changes; R98 diagnostic-only local seekable-edge lag; R99 explicit AirPlay observation invalidation and weak player capture; R100 diagnostic-only local timeline jumps; R126 user-approved connection settings subtitle removal and 12pt first-card spacing only. R127 user-requested Wi-Fi add freeze fix: isolated draft, deferred commit, navigation guard. R128: asynchronous new Wi-Fi credential save and pending guards. R129: Wi-Fi parent form skips auto-save on temporary disappearance; actual exit behavior unchanged. R130: existing Wi-Fi form exit uses guarded background credential write; failed draft retained for retry. R131: shared guarded asynchronous Wi-Fi preset deletion; metadata removed only after credential deletion succeeds. R132: asynchronous Wi-Fi credential read with edit revision and pending guards. R135: slow Wi-Fi read notice and failed read retry eligibility; pending guard retained.; R136 Wi-Fi startup credential write on existing serial queue; validated continuation and existing cancellation ticket. R137 user-approved wording-only change: replace the generic CarPlay video display status with “CarPlay窗口已开启”; no status trigger, video pipeline, or connection behavior changed. R138 user-approved browser-only home status address projection: show IP:port copy row only below “CarPlay窗口已开启”; copy clipboard contains only IP:port; no network or video behavior changes.; R139 user-approved merged home entry and in-page native mode menu; preserve protocol selection callbacks. R141 user-approved native-style floating mode picker: keep trigger row visible; popover content width follows option text; leading edge aligns to the settings card; retain existing options, disabled states and callbacks. R142 user-approved General and Night Mode settings labels; convert app appearance control to binary On/Off while retaining CarPlay day/night mode behavior. R141 floating mode picker retained. R143 user-approved removal of mode popover and restoration of native child selection page; existing callbacks and guards retained. R144 user-requested removal of redundant keyboard accessory Done toolbars only. R145 user-approved add Wi-Fi draft: best-effort current SSID and stored credential autofill, manual edit/exit isolation, no startup change. R146 user-requested wording only: 当前互联模式 → 连接协议. R150: user-approved connection settings grouping, naming, live output-size preview, ratio ordering, and browser-first geometry handoff; original CarLife and instrument sizing paths retained. R151: preserve requested ratio, escalate clarity within protocol ceilings, reject incompatible geometry. R152: browser auto geometry timeout fails closed; session-bound resolution callback and startup status guard. R156: fixed-axis CarLife manual raster cap and accurate local/negotiating output-size label. R157: remove tvOS/macOS-only AVRoutePickerView appearance APIs from iOS; native picker and overlay unchanged."
     },
     "App/BrowserReceiverPage.swift": {
       "original_sha256": "208b41cbdcd1977fd3596681d70c3fe0e7388516f92383d50a12a1b112fd82eb",
-      "approved_sha256": "5d1699de800dfd436b401858232ca72a13dab4707eabcfa1db06fd010477b4bb",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers"
+      "approved_sha256": "07ea322943b38f7fcb0b446a2447f96727f561277ba56aaf94a481777ce2e1a4",
+      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; R153 browser-only settled fullscreen ratio mismatch notice, no live native switch; bilingual fullscreen report parity. R154 browser touch geometry validation, black-bar rejection and gesture cancellation on geometry/session changes."
     },
     "App/CarPlayInfo.swift": {
       "original_sha256": "4cc959aa9f664d9c3f16025716e11490aaa7ce1c9240e7e13d2759a0f9fe19cf",
@@ -160,13 +161,13 @@
     },
     "App/Localization/Localizable.xcstrings": {
       "original_sha256": "8c37c777ec8fdf642428b79a563b01af898b61f46d936685e1535e6da9edbc7d",
-      "approved_sha256": "176c889f4d19eb631f255d04c84b30324cf77886f06f80da6159eac4dc470a89",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers R43 AirPlay status localization."
+      "approved_sha256": "431ef516ebc5998f7368174c1ca9734a40526dfa3f0ce152b076c9d2d28dc4ec",
+      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers R43 AirPlay status localization.; R52 Wi-Fi join messages.; R71 user-approved connection settings title subtitle and localization only.; R91 user-approved menu, update message and layout corrections only.; R93 background and PiP localized strings only.; R94 user-approved dynamic protocol subtitle and visual spacing only. R137 user-approved localization-only wording change: “CarPlay窗口已开启” / “CarPlay window is open”. R138 user-approved browser-only address copy label localization: “点击复制访问地址:{1}” / “Tap to copy access address:{1}”.; R139 user-approved merged home entry and in-page native mode menu; preserve protocol selection callbacks. R142 user-approved General label localization; no protocol or stored identifiers changed. R146 user-requested wording only: 当前互联模式 → 连接协议. R150: user-approved settings labels, clarity/output-size labels, and browser geometry preflight status messages. R151: geometry escalation and failure messages. R152: localized geometry timeout guidance."
     },
     "App/Localization/Receiver.en.html": {
       "original_sha256": "1ec343d696781db339bc05785d45b67de064cc5f9f513b1121e26725787bc73c",
-      "approved_sha256": "84c12a4bb55b3981746d371a0d8dc2a377f6dcc6fa2c5d8d09e500c7947844d0",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers"
+      "approved_sha256": "018102e2f1d9f75d1cfcbbd9f0a5dc2703d6b2e1c89808012684512cfb0fe37a",
+      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; R153 browser-only settled fullscreen ratio mismatch notice, no live native switch; bilingual fullscreen report parity. R154 browser touch geometry validation, black-bar rejection and gesture cancellation on geometry/session changes."
     },
     "App/PxcConnection.swift": {
       "original_sha256": "eac85b6e1301ae7baa8032c72d038ac38478bc3a048dc01f07856a3d81e07a26",
@@ -175,18 +176,18 @@
     },
     "App/ReceiverConfiguration.swift": {
       "original_sha256": "f75fb226a5e0f7c9480f56687d01a123e12c949d7c31c044e1237d136ca1a7c6",
-      "approved_sha256": "5c700452a49e349def7da0ac6f66df8c6429cf723b1a5551e7bc91dd823124dc",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; browser-only developer opt-in multi-area /info profile and shared area count; default off, no live commands; Build 4 browser-only experimental multi-area declaration, no live switch; Build 5 user-authorized CarLife landscape orientation and ratio diagnostics / optional ratio presets; Build 5 user-approved unified runtime experimental opt-in, default off.; Build 9 round 6 user-approved Dock startup preference, opt-in per-area status bar edge; auto preserves legacy behavior."
+      "approved_sha256": "2077c5fff1bfc6721d02594d1107255831dc4e65bd48a9d18983a08304e3f194",
+      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; browser-only developer opt-in multi-area /info profile and shared area count; default off, no live commands; Build 4 browser-only experimental multi-area declaration, no live switch; Build 5 user-authorized CarLife landscape orientation and ratio diagnostics / optional ratio presets; Build 5 user-approved unified runtime experimental opt-in, default off.; Build 9 round 6 user-approved Dock startup preference, opt-in per-area status bar edge; auto preserves legacy behavior. R150: user-approved clarity-tier hard width/height bounds and ordered built-in ratios; device-native ratios are supplied from recorded screens. R151: preserve requested ratio, escalate clarity within protocol ceilings, reject incompatible geometry."
     },
     "App/SupportViews.swift": {
       "original_sha256": "46487d19c95c12bca7dc0a726369e48d93213e8ad8eae506057a327a6e8a9fd6",
-      "approved_sha256": "da654d25e11db60fe01760efcb6f66213384dd0c09f66f6de822b23ce8d51bb3",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers"
+      "approved_sha256": "b59d2e49e2375ec54aaee1327a1a4136f59fe70e03b479dd4c435722082229bb",
+      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; R85 support-only action button presentation and accessibility refresh."
     },
     "App/VideoOutputServer.swift": {
       "original_sha256": "8aab43228d7e31c87624a7a964764491eca34e3d9fd4a768664e323dd30c58cd",
-      "approved_sha256": "70baa8863b3ae24083db09f9cf71e0dca32429e999937a496445736987bab320",
-      "reason": "2026-11-25 user authorized visible DerPlay branding only; preserve protocol and stored identifiers; Build 10 R12 continuation: session-bound browser display and struggling callbacks only; no wire changes."
+      "approved_sha256": "2d3186836397bbe3b84a2402945075e179cb8a6a5ef680f8e0f3d8bbe38e35b0",
+      "reason": "R97: log HLS memory snapshot at a ten-second cadence and clear timer state on stop R150: update browser MP4 dimensions before the first CarPlay frame while preserving waiting clients."
     },
     "App/CarPlayMediaSession.swift": {
       "original_sha256": "5161bd4dbcfef3174bf49a24aafb56c3fecdc1ef7eb839845faf2d151a80053d",
@@ -205,13 +206,13 @@
     },
     "App/SettingsUI.swift": {
       "original_sha256": "89204d763e5aa666d5d9c6ac2bc3e168b1a3aba7ca730d7982c7abeec0b67b40",
-      "approved_sha256": "dfc555e64b6bedac00f215165307845f119e53551549e68a86231a934f01e7a0",
-      "reason": "Build 9 round 4 user-approved presentation-only Liquid Glass migration; preserve runtime callbacks and settings. Independent driving control intentionally removed; stored compatibility parameter retained.; R30 user-approved neutral frosted appearance and home status projection.; R32 fix reported sheet background and icon contrast; presentation only.; R36 preserve same protocol icons in locked read-only rows; no runtime changes.; R37 shared sheet surface reapplied on appearance.; R39 user-supplied and approved brand artwork, presentation only.; R40 user-confirmed planned protocol brand icons, readonly only.; R41 align system icon renderer with explicit trait display scale.; R44 user-approved about/menu and local preview/fullscreen orientation changes.; R45 approved opaque animated settings, row icons, Wi-Fi preset integration and scooter artwork. R45 approved software-theme vehicle menu artwork only."
+      "approved_sha256": "b77c15a9e8ee84fee838e6011e63bd404d3ff6599d728830e82831cd4f200c2c",
+      "reason": "Build 9 round 4 user-approved presentation-only Liquid Glass migration; preserve runtime callbacks and settings. Independent driving control intentionally removed; stored compatibility parameter retained.; R30 user-approved neutral frosted appearance and home status projection.; R32 fix reported sheet background and icon contrast; presentation only.; R36 preserve same protocol icons in locked read-only rows; no runtime changes.; R37 shared sheet surface reapplied on appearance.; R39 user-supplied and approved brand artwork, presentation only.; R40 user-confirmed planned protocol brand icons, readonly only.; R41 align system icon renderer with explicit trait display scale.; R44 user-approved about/menu and local preview/fullscreen orientation changes.; R45 approved opaque animated settings, row icons, Wi-Fi preset integration and scooter artwork. R45 approved software-theme vehicle menu artwork only.; R48 user-approved local vehicle request no-op and exact orange phone tile.; R49 user-approved bright settings palette only.; R69 user-approved About and settings menu changes, shared Dashboard preview refresh and centered spacing only.; R71 user-approved connection settings title subtitle and localization only.; R82 presentation-only shared ChoiceMenu native glass and inline text field minimum height.; R83 settings card and ChoiceMenu accessibility material refresh only.; R91 user-approved menu, update message and layout corrections only.; R91 user-approved settings UI correction.; R93 user-approved fixed settings, default background and bounded interruption-aware audio recovery.; R94 user-approved dynamic protocol subtitle and visual spacing only.; R126 user-approved connection settings subtitle removal and 12pt first-card spacing only. R127 user-requested Wi-Fi add freeze fix: isolated draft, deferred commit, navigation guard. R150: add item replacement that preserves the selected ratio while device-native choices are learned."
     },
     "App/AppReleaseService.swift": {
       "original_sha256": "b0721fcadc50f12b7a1b394962b71211583f4f027c4637b0727b04b19690d403",
-      "reason": "; Build 10 round 6 user-approved restore DerPlay release UI/service, separate CarLife diagnostics, settings startup guards, cancel icon (no protocol changes).",
-      "approved_sha256": "aeda8d1d584157cb0787d59324af0ba1987a62b8d734057bf9b0df88371c8014"
+      "reason": "; Build 10 round 6 user-approved restore DerPlay release UI/service, separate CarLife diagnostics, settings startup guards, cancel icon (no protocol changes).; R91 user-approved menu, update message and layout corrections only.",
+      "approved_sha256": "6eb486a9211ee63c2785e5d84782f1461e5eefac490075e42af76e1c2f63250b"
     },
     "App/AppReleaseViews.swift": {
       "original_sha256": "512a699919cd079e278c5f7a39419bd72bdbb7886bab1c83a65e978735e69032",
@@ -220,8 +221,8 @@
     },
     "App/CarScreenStore.swift": {
       "original_sha256": "62ab7076ba42fb899b3eb780f1451f447f111c0f8b9da5b8121155ac30385573",
-      "reason": "; Build 10 round 6 user-approved restore DerPlay release UI/service, separate CarLife diagnostics, settings startup guards, cancel icon (no protocol changes).; Build 10 R11 continuation: isolate current browser screen planning from geometry-keyed history; no protocol engine changes.",
-      "approved_sha256": "fb3889d72dddb9a8995c25c4d0a364f9ad53000e42f7cbc4be53b1b61e3d8afa"
+      "reason": "; Build 10 round 6 user-approved restore DerPlay release UI/service, separate CarLife diagnostics, settings startup guards, cancel icon (no protocol changes).; Build 10 R11 continuation: isolate current browser screen planning from geometry-keyed history; no protocol engine changes. R150: persist optional physical screen pixel dimensions for native ratio discovery; legacy records remain decodable.",
+      "approved_sha256": "0a86b6c24c64b8552a1e2bbccc3fcc4edbc046cf62a4fa14efebc383cf24b20e"
     },
     "App/WiFiPresetStore.swift": {
       "original_sha256": "23ce02ba8ef02e0b08750b26e1dba4b47e0fb1c4e501feb8d8029026d58b960f",
@@ -232,6 +233,21 @@
       "original_sha256": "52aadb7f07da4764ea98a28a61f97b9756338288dd69daf3aef287d0fedffcf6",
       "reason": "; R44 user-approved about/menu and local preview/fullscreen orientation changes.",
       "approved_sha256": "dc52cff81cdcbd04e88257ad3723ca8aec42e752054b32b3c14fa24835f19d31"
+    },
+    "App/FragmentedMP4.swift": {
+      "original_sha256": "253d505a179ce36e6f770c77fc4ab6121fbb31494e1f6865abdebe832d0870eb",
+      "approved_sha256": "7832f6372e11a42cec7bfdd55ceb4bb69ffc2c235de3dc6af7a4319cf1c525b9",
+      "reason": "R97: maintain incremental HLS retained-byte accounting and expose bounded diagnostics snapshot"
+    },
+    "App/BackgroundKeepAlive.swift": {
+      "original_sha256": "e8ecc6998651bc6d82b466bc9efbbf45bcbc0aef44ada64bf17c08c3e958f71d",
+      "reason": "; R93 user-approved fixed settings, default background and bounded interruption-aware audio recovery.",
+      "approved_sha256": "c5315ae8ab93abb93c15c558e1b2cd0c6c7f8e11bf376292e385aecf84e69288"
+    },
+    "DerPlay/Extensions/NetworkRecoveryPolicy.swift": {
+      "original_sha256": "ee7a842cb1e1102fbd9f6c2693083b9d6ba11a9094d3e9962224cecf16df435c",
+      "approved_sha256": "889bea7364027e7aef2f6f25103716507c4e1d98d25a67f2b90985017665387d",
+      "reason": "R97: add pure throttled AirPlay buffer telemetry policy; diagnostic only; R98 diagnostic-only local seekable-edge lag; R99 explicit AirPlay observation invalidation and weak player capture; R100 diagnostic-only local timeline jumps"
     }
   }
 }

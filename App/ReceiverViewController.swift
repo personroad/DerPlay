@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import AVKit
+import CoreMedia
 import Network
 import NetworkExtension
 import CoreLocation
@@ -16,9 +17,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     // Temporary UI projection; the protocol default remains independent of the matched screen.
     private var carLifeProfileDefaultIndex: Int?
     private var carLifeProfileDefaultIconIndex: Int?
-    private var carLifeProfileDefaultAppearance: Int?
     private var carLifeProfileDefaultDrive: Int?
-    private var carLifeProfileDefaultSound: SoundOutput?
     private var carLifeProfileDefaultCarButton: Bool?
     private var carLifeProfileDefaultFPSIndex: Int?
     private var carLifeProfileDefaultCodecIndex: Int?
@@ -29,13 +28,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard outputMode == .carLife, let geometry = lastCarLifeGeometry,
               carLifeProfileDefaultIndex != nil else { return nil }
         return DeviceProfilePolicy().lookup(scope: currentPreferenceScope, evidence: geometry)?
-            .pictureIndex(allowedRatios: ReceiverConfiguration.aspectRatios.map(\.title))
+            .pictureIndex(allowedRatios: availableAspectRatios.map(\.title))
     }
     private var pictureMenuIndex: Int {
         matchedCarLifePictureIndex ?? (followsCarScreen ? 0 : aspectRatioControl.selectedSegmentIndex + 1)
     }
     private var pictureMenuTitle: String {
-        let options = ["自动适配", nativePresetRatioTitle] + ReceiverConfiguration.aspectRatios.map(\.title)
+        let options = ["自动适配", nativePresetRatioTitle] + availableAspectRatios.map(\.title)
         return options.indices.contains(pictureMenuIndex) ? options[pictureMenuIndex] : options[0]
     }
     // Keep the legacy native-tier preference intact; present its actual ratio instead of a duplicate label.
@@ -44,6 +43,21 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let portrait = UIDevice.current.userInterfaceIdiom == .pad && orientationControl.selectedSegmentIndex == 1 && matchedCarLifePictureIndex == nil
         if cap.width == 800 && cap.height == 480 { return portrait ? "3:5" : "5:3" }
         return portrait ? "9:16" : "16:9"
+    }
+    private var availableAspectRatios: [ReceiverConfiguration.AspectRatio] {
+        var discovered = CarScreenStore.screens().compactMap { screen -> (width: Int, height: Int)? in
+            guard let width = screen.nativeWidth, let height = screen.nativeHeight else { return nil }
+            return (width, height)
+        }
+        if let saved = UserDefaults.standard.string(forKey: "displayAspectRatio"),
+           let ratio = parseAspectRatio(saved) { discovered.append(ratio) }
+        return ReceiverConfiguration.aspectRatios(discovered: discovered)
+    }
+    private func parseAspectRatio(_ title: String) -> (width: Int, height: Int)? {
+        let parts = title.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]),
+              (1...16_384).contains(width), (1...16_384).contains(height) else { return nil }
+        return (width, height)
     }
     private var effectiveDock: DerPlayDockPosition { carLifeProfileDock ?? DerPlayDockPosition.saved() }
     private var currentPreferenceScope: String {
@@ -63,40 +77,17 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let ssidField = UITextField()
     private let passwordField = UITextField()
     private var passwordLoadedForSSID: String?
+    private var wifiPasswordReadID: UUID?
+    private var wifiDeferredExitReadID: UUID?
+    private var wifiPasswordReadPending: Bool { wifiPasswordReadID != nil }
     private let channelField = UITextField()
     private let openNetworkSwitch = UISwitch()
-    private enum SoundOutput: Int, CaseIterable {
-        // Retain the persisted values so the existing Wi-Fi preference survives this change.
-        case carWithin = 0, phone = 1, browser = 2
-
-        var title: String { [CWL("在接收设备上播放"), CWL("由 iPhone 输出"), CWL("随画面传输（Wi-Fi）")][rawValue] }
-
-        var explanation: String {
-            switch self {
-            case .carWithin: return CWL("声音由当前接收设备播放，例如 iPad 的扬声器。")
-            case .phone: return CWL("用 iPhone 当前的声音输出。想让车机出声，请先配对并选中车机蓝牙。")
-            case .browser: return CWL("由接收画面的设备播放。画面自动播放后，若网页提示「开启声音」，点一下即可。")
-            }
-        }
-    }
-    private var selectedSoundOutput: SoundOutput = {
-        let defaults = UserDefaults.standard
-        let receivesOnPad = UIDevice.current.userInterfaceIdiom == .pad
-        let legacy: SoundOutput = receivesOnPad && (defaults.object(forKey: "speakerAudio") as? Bool ?? true)
-            ? .carWithin : .phone
-        let saved = (defaults.object(forKey: "soundOutput") as? Int).flatMap(SoundOutput.init(rawValue:)) ?? legacy
-        if saved == .carWithin && !receivesOnPad {
-            defaults.set(SoundOutput.phone.rawValue, forKey: "soundOutput")
-            return .phone
-        }
-        return saved
-    }()
-    private var receivesAudioFromAnotherDevice: Bool { modeControl.selectedSegmentIndex == 0 }
-    private var soundOutput: SoundOutput {
-        if outputMode == .carLife || outputMode == .airPlay || outputMode.usesInstrumentWiFi { return .phone }
-        if selectedSoundOutput == .carWithin && !receivesAudioFromAnotherDevice { return .phone }
-        if selectedSoundOutput == .browser && !videoOutputSwitch.isOn { return .phone }
-        return selectedSoundOutput
+    // Advertise only audio paths actually supported by the selected receiver.
+    // Capability declaration only: never select an iOS output route here.
+    private func supportsCarPlayAudio(outputPort: UInt16?) -> Bool {
+        guard outputMode == .browser else { return false }
+        if outputPort != nil { return true }
+        return modeControl.selectedSegmentIndex == 0 && UIDevice.current.userInterfaceIdiom == .pad
     }
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
@@ -111,43 +102,61 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let networkSummary = UILabel()
     private let locationManager = CLLocationManager()
     private var awaitingNetworkPermission = false
+    private var wifiDraftPermissionCompletion: (() -> Void)?
     private var activeWiFiForm: UUID?
+    private var wifiAddSavePending = false
+    private let wifiAddSaveQueue = DispatchQueue(label: "derplay.wifi.add-save", qos: .userInitiated)
     private var fetchingNetwork = false
+    private var wifiJoinPending = false
+    private var startupWiFiTicket: UUID?
+    private var startupWiFiVerified = false
     private var canDetectWiFiName: Bool { (Bundle.main.object(forInfoDictionaryKey: "TDSWiFiNameDetection") as? String) == "YES" }
     /// The settings sheet while it is shown.
     private weak var settingsNavigation: UINavigationController?
+    private var opensCertificateAfterConnectionClose = false
     private let transportProbeButton = UIButton(type: .system)
     private let orientationControl = ChoiceMenu(items: [CWL("横屏"), CWL("竖屏")])
     private let wifiPathMonitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    private var lastWiFiPathSatisfied: Bool?
+    private var runtimeNetworkRecovery = DerPlayRuntimeNetworkRecoveryPolicy()
+    private var runtimeNetworkRecoveryWork: DispatchWorkItem?
+    private var backgroundNetworkAddress: String?
     private var networkStartupTask: Task<Void, Never>?
     private var waitingForNetwork = false { didSet { refreshDerPlayPanel() } }
     private var networkRestartCount = 0
+    private var instrumentRecoveryProbe = DerPlayNetworkSessionProbe()
+    private var instrumentRecoveryEpoch = UUID()
+    private var instrumentRecoveryResult: DerPlayNetworkSessionProbe.Result?
     private var localStartupID: UUID?
     private let aspectRatioControl = ChoiceMenu(items: [CWL("预设比例")] + ReceiverConfiguration.aspectRatios.map(\.title))
-    private let resolutionControl = ChoiceMenu(items: ReceiverConfiguration.resolutions.map { "\($0.label)（\($0.width)×\($0.height)）" })
+    private let resolutionControl = ChoiceMenu(items: ReceiverConfiguration.resolutions.map(\.label))
     private let frameRateControl = ChoiceMenu(items: [CWL("自动"), "30 FPS", "60 FPS"])
     private let codecControl = ChoiceMenu(items: [CWL("自动"), "H.264", "H.265"])
     /// 0 = follow the head unit's screen, 1 = the fixed resolution.
-    // Preserve the previously working compatibility choice; no separate direction menu.
-    private var carLifeDirection: DerPlayCarLifeDisplay.Direction {
-        DerPlayCarLifeDisplay.Direction(rawValue: UserDefaults.standard.integer(forKey: "derPlayCarLifeDirection")) ?? .automatic
-    }
+    // The visible automatic picture choice uses reported width/height order.
+    // Do not let an obsolete hidden direction preference override it; fixed ratios remain available.
+    private var carLifeDirection: DerPlayCarLifeDisplay.Direction { .automatic }
     private let sizeModeControl = ChoiceMenu(items: [CWL("跟随车机"), CWL("固定尺寸")])
     private let iconSizeControl = ChoiceMenu(items: ReceiverConfiguration.iconSizes.map(\.title))
     private let autoRestartSwitch = UISwitch()
+    private lazy var browserViewAreaProbeSwitch: UISwitch = {
+        let toggle = UISwitch()
+        toggle.addTarget(self, action: #selector(browserViewAreaProbeChanged), for: .valueChanged)
+        return toggle
+    }()
     private let performanceControl = ChoiceMenu(items: BrowserPerformance.allCases.map(\.title))
     private let showTouchesSwitch = UISwitch()
     private let carButtonSwitch = UISwitch()
     private static let customVehicleIconKey = "customVehicleButtonPNG"
     private var customVehicleIcon: Data? { UserDefaults.standard.data(forKey: Self.customVehicleIconKey) }
     private var importingVehicleIcon = false
-    /// 0 = off, 1 = when leaving the app, 2 = as soon as CarPlay shows.
-    private let pictureInPictureTiming = ChoiceMenu(items: [CWL("关闭"), CWL("离开 App 时"), CWL("出画面后立即")])
-    private var didRequestImmediatePiP = false
+    /// 0 = off, 1 = when leaving the app (legacy 2 migrates to 1).
+    private let pictureInPictureTiming = ChoiceMenu(items: [CWL("开启"), CWL("关闭")], fixedOrder: true)
     /// What the running session was started with; compared against what the head unit reports.
     private var liveDisplay: DisplayPlan?
     /// Screen reported by a browser in this run; saved history is diagnostic only.
     private var reportedScreen: CarScreen?
+    private var browserGeometryResolvedForSession = false
     private var carLifeScreen: CarScreen?
     private var carLifeNegotiationTimeout: DispatchWorkItem?
     private var primaryViewer: UUID?
@@ -159,7 +168,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var restartingAutomatically = false
     private var pendingAutomaticRestart: UUID?
     private var pendingRestartReason: String?
-    private let appearanceControl = ChoiceMenu(items: ReceiverConfiguration.Appearance.allCases.map(\.title))
     /// CarPlay keys under the inline video.
     private let controlBar = UIStackView()
     private let secureBrowserURLLabel = UILabel()
@@ -179,13 +187,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let zeehoSEPlusFrameRateControl = ChoiceMenu(items: ZeehoFrameRate.allCases.map(\.title))
     private let zeehoSEPlusCanvasControl = ChoiceMenu(items: ZeehoCanvas.allCases.map(\.title))
     private let zeehoSEPlusVideoModeControl = ChoiceMenu(items: ZeehoVideoMode.allCases.map(\.title))
-    private let audioRoutePicker: AVRoutePickerView = {
-        let picker = AVRoutePickerView()
-        picker.prioritizesVideoDevices = false
-        picker.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        picker.heightAnchor.constraint(equalToConstant: 36).isActive = true
-        return picker
-    }()
     private var selectedZeehoCanvas: ZeehoCanvas {
         ZeehoCanvas(rawValue: zeehoSEPlusCanvasControl.selectedSegmentIndex) ?? .wide
     }
@@ -269,6 +270,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let bluetoothSetupSwitch = UISwitch()
     private var needsNetworkDetails: Bool { modeControl.selectedSegmentIndex != 0 || bluetoothSetupSwitch.isOn }
     private let startButton = UIButton(type: .system)
+    private var connectionControlLayer: ConnectionControlLayer?
+    private let playbackHomeSlot = UIView()
     private let heading = UILabel()
     private let explanation = UILabel()
     private let statusLabel = StatusLabel()
@@ -283,11 +286,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let derPlayPreviewPlaceholder = UIView()
     private let derPlayPreviewMessage = UILabel()
     private let glassDashboardState = DerPlayGlassDashboardState()
+    private var browserCopyFeedbackGeneration = UUID()
     private let systemAppearanceObserver = DerPlaySystemAppearanceObserver(frame: .zero)
     private var inlineVideoConstraints: [NSLayoutConstraint] = []
     private lazy var pictureInPicture = CarPlayPictureInPicture(surface: videoSurface)
     private let keepAlive = BackgroundKeepAlive()
-    private let keepAliveSwitch = UISwitch()
     private let headUnitOutput = ChoiceMenu(items: HeadUnitOutput.menuOrder.map(\.title))
     private enum HeadUnitOutput: Int {
         // Persisted in headUnitOutputV2. Append new modes after existing values.
@@ -340,9 +343,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var airPlayWaitingSince: TimeInterval?
     private var airPlaySourceWasStale = false
     private var airPlayTimeObservation: NSKeyValueObservation?
-    #if DEBUG
     private var airPlayDiagnostic = ""
-    #endif
+    private var airPlayLastRecoveryAt: TimeInterval?
+    private var airPlayRecoveryCount = 0
+    private var airPlayTransportRecovery = DerPlayAirPlayRecoveryPolicy()
+    private var airPlayBufferTelemetry = DerPlayAirPlayBufferTelemetry()
+    private var airPlayTimelineTelemetry = DerPlayAirPlayTimelineTelemetry()
+    private var airPlayProgressAnchor: (position: Double, uptime: TimeInterval)?
+    private var airPlayTimelineStalled = false
     private static let lastAirPlayDeviceKey = "lastAirPlayDeviceName"
     private var airPlayReady = false
     private let airPlayStatus = StatusLabel()
@@ -371,11 +379,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     struct DisplayPlan: Equatable {
         var width: Int; var height: Int; var fps: Int; var codec: VideoCodec; var iconWidthMM: Int
+        var ratioAdjustedForMinimumSide = false
+        var ratioUnsupported = false
     }
     /// Local frames were dropped in the background; the display needs a new keyframe on return.
     private var skippedLocalVideo = false
     /// The session survives backgrounding through PiP or the silent keep-alive audio.
-    private var canRunInBackground: Bool { keepAlive.isRunning || pictureInPicture.canKeepSessionInBackground }
+    private var canRunInBackground: Bool { keepAlive.isActuallyPlaying || pictureInPicture.canKeepSessionInBackground }
     private let fullscreenButton = UIButton(type: .system)
     private var previewFullscreenTimer: Timer?
     private let passwordStatus = StatusLabel()
@@ -393,19 +403,26 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private weak var derPlayIdentityPicker: UIDocumentPickerViewController?
     private var derPlayIdentityImporting = false
     private var running = false { didSet { refreshDerPlayPanel() } }
+    private var lastSettingsPlaybackState: [Bool] = []
+    private var settingsPlaybackRefreshPending = false
     private var checkingForUpdates = false
     private var updateCheckTask: Task<Void, Never>?
     private var updateTimer: Timer?
     private weak var updateSheet: UIViewController?
     private var updateSheetAutomatic = false
     private static let projectURL = URL(string: "https://github.com/personroad/DerPlay")!
-    private static let releasesURL = projectURL.appendingPathComponent("releases")
     private static let authorURL = URL(string: "https://v.douyin.com/x64M2NbYj0A/")!
     private var lines: [String] = []
     private var launchedTransportTest = false
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        connectionControlLayer?.reconcileSettledLayout()
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        startForegroundMaintenance()
         installSystemAppearanceObserver()
         if !running { modeChanged() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -420,15 +437,15 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             launchedTransportTest = true
             modeControl.selectedSegmentIndex = 1; modeChanged(); toggleReceiver()
         } else if !launchedTransportTest, let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--open-settings") {
-            // Screenshots: --open-settings [display|screens|wifi|presets|vehicle|sound|output|web|log|lab|about|usage]
+            // Screenshots: --open-settings [display|screens|wifi|presets|vehicle|output|web|log|about|usage]
             launchedTransportTest = true
             revealSettings()
             let arguments = ProcessInfo.processInfo.arguments
             let pages: [String: () -> UIViewController] = [
                 "display": displayPage, "screens": screensPage, "wifi": wifiPage, "presets": presetsPage,
-                "vehicle": vehiclePage, "sound": soundPage, "output": headUnitPage,
+                "vehicle": vehiclePage, "output": headUnitPage,
                 "tailing": { [unowned self] in self.headUnitOutput.selectedSegmentIndex = HeadUnitOutput.tailing.menuIndex; self.headUnitOutputChanged(); return self.headUnitPage() },
-                "web": headUnitPage, "log": logPage, "lab": diagnosticsPage, "about": aboutPage,
+                "web": headUnitPage, "log": logPage, "about": aboutPage,
                 "usage": usagePage, "updates": aboutPage, "https": httpsSettingsPage,
                 "thanks": { ContributionsViewController() }, "support": { DeveloperSupportViewController(openAlipayOnEntry: false) }, "support-auto": { DeveloperSupportViewController() },
                 "support-info": { SupportInformationViewController() }]
@@ -455,7 +472,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         derPlayTitle.textColor = DerPlayGlassPalette.accent
         derPlayTitle.adjustsFontSizeToFitWidth = true
         derPlayTitle.minimumScaleFactor = 0.75
-        DerPlayGlassPalette.shadow(derPlayTitle, radius: 9, offset: 5)
+        DerPlayGlassPalette.shadow(derPlayTitle, radius: 6, offset: 3)
+        derPlayTitle.layer.shadowOpacity = 0.16
         derPlayTitle.textAlignment = .center; derPlayTitle.accessibilityTraits = .header
         navigationItem.titleView = derPlayTitle
         navigationItem.largeTitleDisplayMode = .never
@@ -503,6 +521,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         ssidField.text = selectedPreset?.ssid ?? UserDefaults.standard.string(forKey: "wifiSSID")
         ssidField.addTarget(self, action: #selector(networkNameChanged), for: .editingChanged)
         ssidField.addTarget(self, action: #selector(loadWiFiPassword), for: .editingDidEnd)
+        passwordField.addTarget(self, action: #selector(wifiPasswordEdited), for: .editingChanged)
+        openNetworkSwitch.addTarget(self, action: #selector(wifiPasswordEdited), for: .valueChanged)
         channelField.text = String(Int(selectedPreset?.channel ?? WiFiPresetStore.legacyChannel()))
         openNetworkSwitch.isOn = selectedPreset?.isOpen ?? false
         channelField.keyboardType = .numberPad
@@ -515,7 +535,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         connectionHelp.font = .preferredFont(forTextStyle: .body)
         connectionHelp.textColor = .secondaryLabel; connectionHelp.numberOfLines = 0
-        receiverPicker.configuration = .bordered(); receiverPicker.showsMenuAsPrimaryAction = true
+        receiverPicker.configuration = DerPlayGlassPalette.nativeButtonConfiguration() ?? .bordered(); receiverPicker.showsMenuAsPrimaryAction = true
         startupHint.font = .preferredFont(forTextStyle: .footnote)
         startupHint.textColor = .secondaryLabel
         startupHint.numberOfLines = 0
@@ -530,12 +550,15 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         applyAppearance()
         refreshVideoOutputSummary()
 
-        startButton.configuration = .filled()
-        startButton.addTarget(self, action: #selector(toggleReceiver), for: .touchUpInside)
+        startButton.configuration = DerPlayGlassPalette.nativeButtonConfiguration(prominent: true) ?? .filled()
+        startButton.addTarget(self, action: #selector(connectionPlaybackTapped), for: .touchUpInside)
         startButton.configuration?.cornerStyle = .capsule
         startButton.configuration?.baseBackgroundColor = DerPlayGlassPalette.startGreen
         startButton.configuration?.baseForegroundColor = .white
-        DerPlayGlassPalette.shadow(startButton, radius: 16, offset: 8)
+        startButton.tintColor = DerPlayGlassPalette.startGreen
+        if !DerPlayGlassPalette.usesNativeButtonGlass {
+            DerPlayGlassPalette.shadow(startButton, radius: 16, offset: 8)
+        }
         startButton.configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var attributes = incoming
             attributes.font = .systemFont(ofSize: 22, weight: .semibold)
@@ -605,7 +628,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             status: carLifeCardStatus)
         let carLifeSettings = UIButton(type: .system)
         carLifeSettings.configuration = .tinted()
-        carLifeSettings.configuration?.title = CWL("连接设置")
+        carLifeSettings.configuration?.title = CWL("连接模式")
         carLifeSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
         carLifeCard.addArrangedSubview(carLifeSettings)
 
@@ -613,7 +636,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             instructions: CWL("让 iPhone 加入极核仪表 Wi-Fi，打开仪表投屏后启动 CarPlay。"), status: zeehoCardStatus)
         let zeehoSettings = UIButton(type: .system)
         zeehoSettings.configuration = .tinted()
-        zeehoSettings.configuration?.title = CWL("连接设置")
+        zeehoSettings.configuration?.title = CWL("连接模式")
         zeehoSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
         zeehoCard.addArrangedSubview(zeehoSettings)
 
@@ -621,14 +644,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             instructions: "让 iPhone 加入春风仪表 Wi-Fi，打开仪表投屏后启动 CarPlay。春风和极核同一套 PXC 协议（TCP 10920/10921/10922 + 10930 通知），由仪表回连后再逐帧拉画面。", status: cfmotoCardStatus)
         let cfmotoSettings = UIButton(type: .system)
         cfmotoSettings.configuration = .tinted()
-        cfmotoSettings.configuration?.title = CWL("连接设置")
+        cfmotoSettings.configuration?.title = CWL("连接模式")
         cfmotoSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
         cfmotoCard.addArrangedSubview(cfmotoSettings)
         ninebotCardInstructions = configureConnectionCard(ninebotCard, title: CWL("九号仪表连接"), symbol: "scooter", color: .systemBlue,
             instructions: Self.ninebotFiveInstructions, status: ninebotCardStatus)
         let ninebotSettings = UIButton(type: .system)
         ninebotSettings.configuration = .tinted()
-        ninebotSettings.configuration?.title = CWL("连接设置")
+        ninebotSettings.configuration?.title = CWL("连接模式")
         ninebotSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
         ninebotCard.addArrangedSubview(ninebotSettings)
         configureConnectionCard(tailingCard, title: CWL("台铃 4.3 寸连接"), symbol: "scooter", color: .systemOrange,
@@ -636,7 +659,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             status: tailingCardStatus)
         let tailingSettings = UIButton(type: .system)
         tailingSettings.configuration = .tinted()
-        tailingSettings.configuration?.title = CWL("连接设置")
+        tailingSettings.configuration?.title = CWL("连接模式")
         tailingSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
         tailingCard.addArrangedSubview(tailingSettings)
 
@@ -644,15 +667,17 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             instructions: CWL("接收设备与 iPhone 连同一 Wi-Fi。启动 CarPlay 后，可在这里选择设备。"),
             status: airPlayCardStatus)
         airPlayRoutePicker.prioritizesVideoDevices = true
-        airPlayRoutePicker.tintColor = .systemBlue
-        airPlayRoutePicker.activeTintColor = .systemGreen
-        airPlayRoutePicker.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.1)
-        airPlayRoutePicker.layer.cornerRadius = 14
+        // Native route picker appearance is supplied by the SwiftUI overlay on iOS.
+        airPlayRoutePicker.tintColor = .clear
+        airPlayRoutePicker.activeTintColor = .clear
+        airPlayRoutePicker.backgroundColor = .clear
+        airPlayRoutePicker.layer.cornerRadius = 22
+        airPlayRoutePicker.layer.masksToBounds = true
         airPlayRoutePicker.accessibilityLabel = CWL("选择 AirPlay 设备")
         airPlayRoutePicker.isUserInteractionEnabled = false
         airPlayRoutePicker.alpha = 0.45
         airPlayRoutePicker.accessibilityTraits.insert(.notEnabled)
-        airPlayRetryButton.configuration = .tinted()
+        airPlayRetryButton.configuration = DerPlayGlassPalette.nativeButtonConfiguration() ?? .tinted()
         airPlayRetryButton.configuration?.title = CWL("重试 AirPlay")
         airPlayRetryButton.addAction(UIAction { [weak self] _ in self?.retryAirPlayTransport() }, for: .touchUpInside)
         airPlayRetryButton.isHidden = true
@@ -673,7 +698,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         inlineVideoShadow.backgroundColor = .black
         inlineVideoShadow.layer.cornerRadius = 22
         inlineVideoShadow.layer.cornerCurve = .continuous
-        DerPlayGlassPalette.shadow(inlineVideoShadow, radius: 16, offset: 8)
+        DerPlayGlassPalette.previewShadow(inlineVideoShadow)
         inlineVideoContainer.translatesAutoresizingMaskIntoConstraints = false
         inlineVideoShadow.addSubview(inlineVideoContainer)
         NSLayoutConstraint.activate([
@@ -690,6 +715,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         fullscreenButton.tintColor = .white
         fullscreenButton.backgroundColor = UIColor.black.withAlphaComponent(0.55)
         fullscreenButton.layer.cornerRadius = 22
+        DerPlayGlassPalette.applyVideoButtonGlass(fullscreenButton, image: fullscreenButton.image(for: .normal))
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshHomeButtonMaterials), name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
         fullscreenButton.accessibilityLabel = CWL("全屏显示")
         fullscreenButton.addTarget(self, action: #selector(showFullscreen), for: .touchUpInside)
         fullscreenButton.translatesAutoresizingMaskIntoConstraints = false
@@ -716,17 +743,18 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let footer = UIView()
         footer.backgroundColor = .clear
         footer.translatesAutoresizingMaskIntoConstraints = false
-        startButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(footer); footer.addSubview(startButton)
+        playbackHomeSlot.translatesAutoresizingMaskIntoConstraints = false
+        playbackHomeSlot.isUserInteractionEnabled = false
+        view.addSubview(footer); footer.addSubview(playbackHomeSlot)
         NSLayoutConstraint.activate([
             footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            startButton.topAnchor.constraint(equalTo: footer.topAnchor, constant: 8),
-            startButton.bottomAnchor.constraint(equalTo: footer.bottomAnchor, constant: -8),
-            startButton.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
-            startButton.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            startButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 80)
+            playbackHomeSlot.topAnchor.constraint(equalTo: footer.topAnchor, constant: 8),
+            playbackHomeSlot.bottomAnchor.constraint(equalTo: footer.bottomAnchor, constant: -8),
+            playbackHomeSlot.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            playbackHomeSlot.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            playbackHomeSlot.heightAnchor.constraint(equalToConstant: 80)
         ])
         let preferredWidth = stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -32)
         preferredWidth.priority = UILayoutPriority(999)
@@ -740,6 +768,23 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             preferredWidth, stack.widthAnchor.constraint(lessThanOrEqualTo: scroll.frameLayoutGuide.widthAnchor, constant: -32),
             stack.widthAnchor.constraint(lessThanOrEqualToConstant: 720)
         ])
+        let connectionLayer = ConnectionControlLayer(button: startButton, homeSlot: playbackHomeSlot)
+        connectionLayer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(connectionLayer)
+        NSLayoutConstraint.activate([
+            connectionLayer.topAnchor.constraint(equalTo: view.topAnchor),
+            connectionLayer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            connectionLayer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            connectionLayer.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        connectionControlLayer = connectionLayer
+        connectionLayer.onBeginOpening = { [weak self] in self?.prepareConnectionLayer() ?? false }
+        connectionLayer.onClosed = { [weak self] in self?.finishConnectionLayer() }
+        connectionLayer.canDrag = { [weak self] in
+            guard let self, self.presentedViewController == nil, !self.opensCertificateAfterConnectionClose else { return false }
+            guard let navigation = self.settingsNavigation else { return true }
+            return navigation.parent === self && navigation.presentedViewController == nil && navigation.transitionCoordinator == nil
+        }
         receiver.onLog = { [weak self] in self?.log($0) }; bluetooth.onLog = { [weak self] in self?.log($0) }
         receiver.onControlConnected = { [weak self] in self?.sameDevice.didConnectControl() }
         receiver.onVideo = { [weak self] data, codec in
@@ -755,7 +800,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 try self.videoSurface.enqueue(accessUnit: data, codec: codec)
                 if !self.displayedVideo {
                     self.inlineVideoContainer.isHidden = false
-                    self.displayedVideo = true; self.statusLabel.text = CWL("正在显示 CarPlay")
+                    self.displayedVideo = true; self.statusLabel.text = CWL("CarPlay窗口已开启")
+                    self.startRuntimeNetworkRecoveryIfNeeded()
                     self.refreshDerPlayPanel()
                     self.clearStartupHint()
                     self.networkStartupTask?.cancel()
@@ -810,13 +856,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             guard let self, self.running, self.outputMode == .carLife else { return }
             self.updateCarLifeStatus(message)
         }
-        receiver.onCarUIRequested = { [weak self] in
-            guard let self else { return }
-            self.log(CWL("在 CarPlay 中点按了 DerPlay 车辆按钮"))
-            self.hideFullscreen(); self.revealSettings()
-        }
+        // A vehicle request must not navigate the local DerPlay interface.
+        // NativeReceiver still acknowledges requestUI normally.
+        receiver.onCarUIRequested = nil
         receiver.onAirPlayReady = { [weak self] id in
-            guard let self, self.airPlayStreamID == id else { return }
+            guard let self, self.running, self.outputMode == .airPlay,
+                  self.airPlayStreamID == id, !self.airPlayReady else { return }
             self.airPlayReady = true
             self.startAirPlayTransport()
         }
@@ -848,6 +893,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             self?.hideFullscreen()
         }
         receiver.onFailure = { [weak self] in self?.stop() }
+
         bluetooth.onFailure = { [weak self] message in
             self?.stop()
             self?.statusLabel.text = message
@@ -892,8 +938,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             refreshScreenMenu()
         }
         #endif
-        wifiPathMonitor.pathUpdateHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.refreshNetworkAddresses() }
+        wifiPathMonitor.pathUpdateHandler = { [weak self] path in
+            let wifiAvailable = path.status == .satisfied
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.handleRuntimeWiFiPathChange(wifiAvailable)
+                self.refreshNetworkAddresses()
+            }
         }
         wifiPathMonitor.start(queue: DispatchQueue(label: "CarWithin.wifiPath"))
         loadIdentity()
@@ -912,13 +963,42 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(airPlayAudioRouteChanged),
             name: AVAudioSession.routeChangeNotification, object: nil)
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.checkForUpdates(manual: false)
-        }
     }
     deinit {
         wifiPathMonitor.cancel()
         networkStartupTask?.cancel()
+        updateTimer?.invalidate()
+        airPlayHealthTimer?.invalidate()
+        runtimeNetworkRecoveryWork?.cancel()
+    }
+
+    /// Periodic UI maintenance is foreground-only; background audio/PiP owns its own session.
+    private func startForegroundMaintenance() {
+        guard UIApplication.shared.applicationState == .active else { return }
+        if updateTimer == nil {
+            updateTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                self?.checkForUpdates(manual: false)
+            }
+        }
+        startAirPlayHealthTimerIfNeeded()
+        if runtimeNetworkRecovery.hasPendingRecovery { scheduleRuntimeNetworkRecoveryCheck() }
+    }
+
+    private func pauseForegroundMaintenance() {
+        airPlayTimelineTelemetry.reset()
+        updateTimer?.invalidate(); updateTimer = nil
+        updateCheckTask?.cancel(); updateCheckTask = nil
+        airPlayHealthTimer?.invalidate(); airPlayHealthTimer = nil
+        screenAdaptation?.cancel(); screenAdaptation = nil
+        runtimeNetworkRecoveryWork?.cancel(); runtimeNetworkRecoveryWork = nil
+    }
+
+    private func startAirPlayHealthTimerIfNeeded() {
+        guard UIApplication.shared.applicationState == .active,
+              running, outputMode == .airPlay, airPlayPlayer != nil, airPlayHealthTimer == nil else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.refreshAirPlayPlaybackStatus() }
+        RunLoop.main.add(timer, forMode: .common)
+        airPlayHealthTimer = timer
     }
 
     /// Presets are listed on their own settings page; refresh it if it is open.
@@ -933,45 +1013,63 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         loadWiFiPassword()
         refreshWiFiPresetMenu(); refreshNetworkSummary()
     }
-    private func saveCurrentWiFiPreset() -> Bool {
+    private func saveCurrentWiFiPreset(completion: @escaping (Bool) -> Void) {
+        guard !wifiAddSavePending, !wifiPasswordReadPending else { completion(false); return }
         let ssid = ssidField.text ?? ""
         let channelText = channelField.text ?? ""
         let channel = channelText.isEmpty ? UInt8(36) : UInt8(channelText)
         guard !ssid.isEmpty, ssid.utf8.count <= 32, let channel, (1...196).contains(channel) else {
-            passwordStatus.text = CWL("请输入有效的 Wi-Fi 名称和 1–196 的兼容信道。"); return false
+            passwordStatus.text = CWL("请输入有效的 Wi-Fi 名称和 1–196 的兼容信道。"); completion(false); return
         }
         let password = openNetworkSwitch.isOn ? "" : (passwordField.text ?? "")
         guard openNetworkSwitch.isOn || (8...63).contains(password.utf8.count) else {
-            passwordStatus.text = CWL("Wi-Fi 密码需要 8–63 字节。"); return false
+            passwordStatus.text = CWL("Wi-Fi 密码需要 8–63 字节。"); completion(false); return
         }
-        do {
-            try WiFiCredentials.save(password, for: ssid)
-            WiFiPresetStore.upsert(ssid: ssid, channel: channel, isOpen: openNetworkSwitch.isOn)
-            passwordStatus.text = WiFiCredentials.isTemporary(for: ssid)
-                ? WiFiCredentials.temporaryNotice : CWL("已保存 Wi-Fi 预设“{1}”", [String(describing: ssid)])
-            refreshWiFiPresetMenu()
-            return true
-        } catch { passwordStatus.text = CWL("保存 Wi-Fi 预设失败：{1}", [String(describing: error.localizedDescription)]); return false }
+        let isOpen = openNetworkSwitch.isOn
+        wifiAddSavePending = true
+        wifiAddSaveQueue.async { [weak self] in
+            let result: Result<Bool, Error> = Result {
+                try WiFiCredentials.save(password, for: ssid)
+                return WiFiCredentials.isTemporary(for: ssid)
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.wifiAddSavePending = false
+                switch result {
+                case .success(let temporary):
+                    WiFiPresetStore.upsert(ssid: ssid, channel: channel, isOpen: isOpen)
+                    self.passwordStatus.text = temporary ? WiFiCredentials.temporaryNotice : CWL("已保存 Wi-Fi 预设“{1}”", [ssid])
+                    completion(true)
+                case .failure(let error):
+                    self.passwordStatus.text = CWL("保存 Wi-Fi 预设失败：{1}", [error.localizedDescription])
+                    completion(false)
+                }
+                self.refreshWiFiPresetMenu()
+            }
+        }
     }
     @objc private func displaySettingChanged() {
         guard !running, !waitingForNetwork else { return }
         if !followsCarScreen { clearCarLifeProfileProjection() }
         saveDisplaySettings()
         updateVideoAspect()
-        reloadVisibleSettings()
+        // Do not detach a native pull-down menu's source during its dismissal.
+        // Connection-page display choices do not change the row structure.
+        if let page = settingsNavigation?.topViewController as? SettingsPageController,
+           page.title == CWL("连接模式") {
+            page.refreshDetails()
+        } else {
+            reloadVisibleSettings()
+        }
     }
     private func clearCarLifeProfileProjection() {
         if let index = carLifeProfileDefaultIndex { resolutionControl.selectedSegmentIndex = index }
         carLifeProfileDefaultIndex = nil
         if let index = carLifeProfileDefaultIconIndex { iconSizeControl.selectedSegmentIndex = index }
         carLifeProfileDefaultIconIndex = nil
-        if let index = carLifeProfileDefaultAppearance { appearanceControl.selectedSegmentIndex = index }
-        carLifeProfileDefaultAppearance = nil
         if let index = carLifeProfileDefaultDrive { driveControl.selectedSegmentIndex = index }
         carLifeProfileDefaultDrive = nil
         carLifeProfileDock = nil
-        if let sound = carLifeProfileDefaultSound { selectedSoundOutput = sound }
-        carLifeProfileDefaultSound = nil
         if let enabled = carLifeProfileDefaultCarButton { carButtonSwitch.isOn = enabled }
         carLifeProfileDefaultCarButton = nil
         if let index = carLifeProfileDefaultFPSIndex { frameRateControl.selectedSegmentIndex = index }
@@ -1000,9 +1098,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             ?? .init(resolutionIndex: index, aspectRatio: "auto", sizeMode: 0)
         return store.save(old.replacingLayout(resolutionIndex: index,
             iconWidthMM: ReceiverConfiguration.iconSizes[iconIndex].widthMM,
-            appearance: appearanceControl.selectedSegmentIndex, dockPosition: effectiveDock.rawValue,
+            appearance: 0, dockPosition: effectiveDock.rawValue,
             rightHandDrive: driveControl.selectedSegmentIndex == 1,
-            soundOutput: selectedSoundOutput.rawValue, carButton: carButtonSwitch.isOn)
+            carButton: carButtonSwitch.isOn)
             .replacingVideo(fps: [0, 30, 60][max(0, frameRateControl.selectedSegmentIndex)],
                             codec: ["auto", "h264", "h265"][max(0, codecControl.selectedSegmentIndex)]),
             scope: currentPreferenceScope, evidence: geometry)
@@ -1060,29 +1158,40 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             return DisplayPlan(width: 960, height: 544, fps: 30, codec: .h264, iconWidthMM: icon)
         }
         let cap = selectedResolution()
-        let portrait = UIDevice.current.userInterfaceIdiom == .pad && orientationControl.selectedSegmentIndex == 1
-        var width = portrait ? cap.height : cap.width, height = portrait ? cap.width : cap.height
-        var capArea = cap.width * cap.height
-        if lightLevel >= 2 { capArea = min(capArea, 1280 * 720) }
-        // CarLife head units decode H.264 up to 1080p and usually ask for 30 FPS.
-        if outputMode != .browser { capArea = min(capArea, 1920 * 1080) }
+        let capArea = min(cap.width * cap.height, outputMode == .browser ? 3840 * 2160 : 1920 * 1080)
+        let candidates = displayGeometryBounds()
+        let maxLandscapeWidth = candidates[0].width
+        let maxLandscapeHeight = candidates[0].height
+
+        // CarLife's first-frame negotiation has its own receiver-specific sizing protocol.
+        // Keep that established path untouched; all other modes use independent hard bounds.
+        let requestedRatio: (width: Int, height: Int)
         if followsCarScreen, let screen, outputMode != .carLife {
-            width = screen.width; height = screen.height
+            requestedRatio = (screen.width, screen.height)
+        } else if !followsCarScreen, let ratio = selectedAspectRatio {
+            requestedRatio = (ratio.width, ratio.height)
+        } else if UIDevice.current.userInterfaceIdiom == .pad && orientationControl.selectedSegmentIndex == 1 {
+            requestedRatio = (cap.height, cap.width)
+        } else {
+            requestedRatio = (cap.width, cap.height)
         }
-        // Scale down, keeping the aspect ratio, to the chosen maximum area and 3840 per side.
-        var scale = min(1, (Double(capArea) / Double(width * height)).squareRoot(), 3840 / Double(max(width, height)))
-        if outputMode != .browser {
-            scale = min(scale, 1920 / Double(width), 1080 / Double(height))
-        }
-        width = max(320, Int(Double(width) * scale) / 2 * 2); height = max(320, Int(Double(height) * scale) / 2 * 2)
+        let portrait = requestedRatio.height > requestedRatio.width
+        let bounds = DisplayGeometry.orientedBounds(width: maxLandscapeWidth, height: maxLandscapeHeight, portrait: portrait)
+        var width: Int
+        var height: Int
+        var ratioAdjustedForMinimumSide = false
+        var ratioUnsupported = false
         if outputMode == .carLife, followsCarScreen, let screen,
            let size = DerPlayCarLifeDisplay.size(width: screen.width, height: screen.height, area: capArea, direction: carLifeDirection) {
             width = size.width; height = size.height
-        }
-        if !followsCarScreen, let ratio = selectedAspectRatio {
-            (width, height) = ReceiverConfiguration.fixedDisplaySize(area: capArea, ratio: ratio,
-                maxWidth: outputMode == .browser ? 3840 : 1920,
-                maxHeight: outputMode == .browser ? 3840 : 1080)
+        } else if let fit = DisplayGeometry.fitPreservingRatio(ratioWidth: requestedRatio.width, ratioHeight: requestedRatio.height,
+                                                               landscapeBounds: candidates,
+                                                               absoluteBounds: outputMode == .carLife ? .init(width: 1920, height: 1080) : nil) {
+            width = fit.size.width; height = fit.size.height
+            ratioAdjustedForMinimumSide = fit.adjustedForMinimumSide
+        } else {
+            width = bounds.width; height = bounds.height // preview placeholder only
+            ratioUnsupported = true
         }
         var fps: Int
         switch frameRateControl.selectedSegmentIndex {
@@ -1101,11 +1210,36 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if outputMode != .browser { codec = .h264 }
         let defaultIconWidth = ReceiverConfiguration.iconSizes[max(0, iconSizeControl.selectedSegmentIndex)].widthMM
         let iconWidth = followsCarScreen ? screen?.iconWidthMM ?? defaultIconWidth : defaultIconWidth
-        return DisplayPlan(width: width, height: height, fps: fps, codec: codec, iconWidthMM: iconWidth)
+        return DisplayPlan(width: width, height: height, fps: fps, codec: codec, iconWidthMM: iconWidth,
+                           ratioAdjustedForMinimumSide: ratioAdjustedForMinimumSide, ratioUnsupported: ratioUnsupported)
     }
-    private func refreshScreenMenu() { reloadVisibleSettings() }
+    private func displayGeometryBounds() -> [DisplayGeometry.Size] {
+        let tiers = ReceiverConfiguration.resolutions
+        let selected = resolutionControl.selectedSegmentIndex
+        let index = tiers.indices.contains(selected) ? selected : ReceiverConfiguration.defaultResolutionIndex
+        let ceilingWidth = lightLevel >= 2 ? 1280 : (outputMode == .browser ? 3840 : 1920)
+        let ceilingHeight = lightLevel >= 2 ? 720 : (outputMode == .browser ? 2160 : 1080)
+        return tiers[index...].map { DisplayGeometry.Size(width: min($0.width, ceilingWidth), height: min($0.height, ceilingHeight)) }
+    }
+    private func actualOutputResolutionLabel(for plan: DisplayPlan) -> String {
+        if followsCarScreen && modeControl.selectedSegmentIndex == 1 {
+            if outputMode == .browser && videoOutputSwitch.isOn && !browserGeometryResolvedForSession { return CWL("连接后识别") }
+            if outputMode == .carLife && liveDisplay == nil { return CWL("连接后识别") }
+        }
+        let actual = running ? (liveDisplay ?? plan) : plan
+        if actual.ratioUnsupported { return CWL("当前协议不支持此画面比例") }
+        let dimensions = "\(actual.width) × \(actual.height)"
+        return dimensions + (actual.ratioAdjustedForMinimumSide ? CWL(" · 已自动提高清晰度") : "")
+    }
+    private func refreshScreenMenu() {
+        let selected = aspectRatioControl.selectedTitle
+        let items = [CWL("预设比例")] + availableAspectRatios.map(\.title)
+        aspectRatioControl.replaceItems(items)
+        if let index = items.firstIndex(of: selected) { aspectRatioControl.selectedSegmentIndex = index }
+        reloadVisibleSettings()
+    }
     private var selectedAspectRatio: ReceiverConfiguration.AspectRatio? {
-        ReceiverConfiguration.aspectRatios.first { $0.title == aspectRatioControl.selectedTitle }
+        availableAspectRatios.first { $0.title == aspectRatioControl.selectedTitle }
     }
     private func selectedResolution() -> (width: Int, height: Int) {
         let options = ReceiverConfiguration.resolutions
@@ -1115,6 +1249,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     private func reloadVisibleSettings() {
         (settingsNavigation?.topViewController as? SettingsPageController)?.reload()
+    }
+    // Rebuild the visible settings after synchronous start/stop mutations settle.
+    // SettingsPageController.reload() already defers while a text field is editing.
+    private func scheduleSettingsPlaybackRefresh() {
+        guard let navigation = settingsNavigation, !settingsPlaybackRefreshPending else { return }
+        settingsPlaybackRefreshPending = true
+        DispatchQueue.main.async { [weak self, weak navigation] in
+            guard let self else { return }
+            self.settingsPlaybackRefreshPending = false
+            guard let navigation, self.settingsNavigation === navigation,
+                  let page = navigation.topViewController as? SettingsPageController,
+                  page.isViewLoaded else { return }
+            self.reloadVisibleSettings()
+        }
     }
     private func updateVideoAspect() {
         antBMS.aspectRatio = outputMode == .ninebotSeven ? 1024 / 600 : 848 / 480
@@ -1134,19 +1282,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         placeholderHeight.isActive = true
         updateInlineSurfaceGeometry()
     }
-    @objc private func keepAliveChanged() {
-        UserDefaults.standard.set(keepAliveSwitch.isOn, forKey: "backgroundKeepAlive")
-        if !keepAliveSwitch.isOn { keepAlive.stop() }
-        else if running, UIApplication.shared.applicationState == .active { keepAlive.start() }
-    }
-    @objc private func appearanceChanged() {
-        if carLifeProfileDefaultAppearance != nil {
-            saveMatchedCarLifeLayout()
-        } else {
-            UserDefaults.standard.set(appearanceControl.selectedSegmentIndex, forKey: "carPlayAppearance")
-        }
-        applyAppearance()
-    }
     private var systemAppearanceIsDark: Bool {
         // The parent navigation controller is intentionally never overridden.
         let style = navigationController?.traitCollection.userInterfaceStyle
@@ -1159,7 +1294,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         systemAppearanceObserver.onChange = { [weak self] in
             guard let self else { return }
             self.applyAppearance()
-            if self.settingsNavigation?.topViewController?.title == "CarPlay 外观" { self.reloadVisibleSettings() }
+            if let title = self.settingsNavigation?.topViewController?.title,
+               title == CWL("Dock 栏") { self.reloadVisibleSettings() }
         }
         parentView.addSubview(systemAppearanceObserver)
     }
@@ -1173,13 +1309,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private func applyAppearance() {
         // iOS flips light/dark while taking the app-switcher snapshot; ignore changes off screen.
         guard UIApplication.shared.applicationState != .background else { return }
-        let choice = ReceiverConfiguration.Appearance(rawValue: appearanceControl.selectedSegmentIndex) ?? .system
-        let night: Bool
-        switch choice {
-        case .system: night = systemAppearanceIsDark
-        case .light: night = false
-        case .dark: night = true
-        }
+        let night = systemAppearanceIsDark
         receiver.setNightMode(night)
     }
     private func makeControlButton(_ control: CarPlayControl) -> UIButton {
@@ -1188,7 +1318,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         configuration.cornerStyle = .capsule
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .body)
         let button = UIButton(configuration: configuration, primaryAction: UIAction { [weak self] _ in
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            DerPlayHaptics.lightImpact()
             self?.receiver.press(control)
         })
         let minimumHeight = button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
@@ -1373,9 +1503,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         config.rightHandDrive = driveControl.selectedSegmentIndex == 1
         config.dockPosition = DerPlayDockPosition.saved()
         config.width = plan.width; config.height = plan.height
+        config.displayRatioUnsupported = plan.ratioUnsupported
+        config.browserGeometryBounds = displayGeometryBounds()
         config.maxFPS = plan.fps; config.videoCodec = plan.codec
         config.widthPhysicalMM = plan.iconWidthMM
         config.experimentalBrowserViewAreas = outputMode == .browser && UserDefaults.standard.bool(forKey: ReceiverConfiguration.experimentalBrowserViewAreasKey)
+        config.browserAutoAdaptBeforeCarPlay = outputMode == .browser && modeControl.selectedSegmentIndex == 1 && followsCarScreen && config.videoOutputPort != nil
         config.browserPerformance = selectedPerformance
         config.showTouches = showTouchesSwitch.isOn
         if carButtonSwitch.isOn {
@@ -1389,7 +1522,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         } else {
         log(CWL("画面计划：{1}×{2} @ {3} FPS {4}（{5}{6}）", [String(describing: plan.width), String(describing: plan.height), String(describing: plan.fps), String(describing: plan.codec.displayName), String(describing: source), String(describing: lightLevel > 0 ? CWL("，减轻档 {1}", [String(describing: lightLevel)]) : "")]))
         }
-        config.browserAudio = soundOutput == .browser && config.videoOutputPort != nil && outputMode == .browser
+        // Install a sink for incoming CarPlay audio, not a command to switch the phone route.
+        config.browserAudio = config.audioEnabled && config.videoOutputPort != nil && outputMode == .browser
+        log("CarPlay audio capability: enabled=\(config.audioEnabled), browserSinkAvailable=\(config.browserAudio), receiver=\(modeControl.selectedSegmentIndex), route=\(audioRouteDescription)")
         if outputMode == .airPlay, config.videoOutputPort != nil { config.airPlayStreamID = UUID() }
         if let profile = outputMode.zeehoProfile {
             config.zeehoProfile = profile
@@ -1430,6 +1565,26 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         config.carLifeAddress = !config.carLifeEnabled || carLifeAddress.isEmpty ? nil : carLifeAddress
     }
     @objc private func toggleSettings() { revealSettings() }
+
+    @objc private func connectionPlaybackTapped() {
+        guard connectionControlLayer?.acceptsPlaybackTap == true,
+              presentedViewController == nil,
+              settingsNavigation?.presentedViewController == nil else { return }
+        guard !derPlayIdentityImporting else { return }
+        DerPlayHaptics.lightImpact()
+        if !running && !waitingForNetwork && carLifeNegotiationTimeout == nil && identity == nil {
+            if settingsNavigation?.parent === self {
+                opensCertificateAfterConnectionClose = true
+                closeGlassSettings()
+            } else {
+                revealSettings(certificate: true)
+            }
+            return
+        }
+        toggleReceiver()
+        scheduleSettingsPlaybackRefresh()
+    }
+
     @objc private func driveChanged() {
         if carLifeProfileDefaultDrive != nil {
             saveMatchedCarLifeLayout()
@@ -1448,6 +1603,49 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let plan = liveDisplay ?? planDisplay(for: targetScreen)
         return plan.height > plan.width ? .portrait : .landscape
     }
+    private func refreshConnectionButtonMaterials() {
+        // Preserve the discovered target title and existing menu/action bindings.
+        var receiverConfiguration = DerPlayGlassPalette.nativeButtonConfiguration() ?? .bordered()
+        receiverConfiguration.title = receiverPicker.title(for: .normal) ?? receiverPicker.configuration?.title
+        receiverPicker.configuration = receiverConfiguration
+        var retryConfiguration = DerPlayGlassPalette.nativeButtonConfiguration() ?? .tinted()
+        retryConfiguration.title = CWL("重试 AirPlay")
+        airPlayRetryButton.configuration = retryConfiguration
+    }
+
+    @objc private func refreshHomeButtonMaterials() {
+        refreshConnectionButtonMaterials()
+        if let previous = startButton.configuration {
+            var replacement = DerPlayGlassPalette.nativeButtonConfiguration(prominent: true) ?? .filled()
+            replacement.cornerStyle = previous.cornerStyle
+            replacement.baseBackgroundColor = previous.baseBackgroundColor
+            replacement.baseForegroundColor = previous.baseForegroundColor
+            replacement.title = previous.title
+            replacement.image = previous.image
+            replacement.titleTextAttributesTransformer = previous.titleTextAttributesTransformer
+            replacement.preferredSymbolConfigurationForImage = previous.preferredSymbolConfigurationForImage
+            replacement.imagePadding = previous.imagePadding
+            replacement.imageColorTransformer = previous.imageColorTransformer
+            replacement.contentInsets = previous.contentInsets
+            startButton.configuration = replacement
+            if DerPlayGlassPalette.usesNativeButtonGlass {
+                startButton.layer.shadowOpacity = 0
+            } else {
+                DerPlayGlassPalette.shadow(startButton, radius: 16, offset: 8)
+            }
+        }
+        DerPlayGlassPalette.applyVideoButtonGlass(fullscreenButton, image: UIImage(systemName: "arrow.up.left.and.arrow.down.right"))
+        if let exit = fullscreenExitButton {
+            let icon = UIImage(systemName: "arrow.down.right.and.arrow.up.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .medium))
+            DerPlayGlassPalette.applyVideoButtonGlass(exit, image: icon)
+            if !DerPlayGlassPalette.usesNativeButtonGlass {
+                exit.layer.borderWidth = 1
+                exit.layer.borderColor = UIColor.white.withAlphaComponent(0.35).cgColor
+                exit.layer.shadowOpacity = 0.8
+            }
+        }
+    }
+
     private func hidePreviewFullscreenButton() {
         previewFullscreenTimer?.invalidate()
         previewFullscreenTimer = nil
@@ -1508,6 +1706,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         exit.layer.shadowOpacity = 0.8
         exit.layer.shadowRadius = 2
         exit.layer.shadowOffset = .zero
+        DerPlayGlassPalette.applyVideoButtonGlass(exit, image: icon)
         exit.accessibilityLabel = CWL("退出全屏")
         exit.addTarget(self, action: #selector(hideFullscreen), for: .touchUpInside)
         exit.translatesAutoresizingMaskIntoConstraints = false
@@ -1589,7 +1788,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         NSLayoutConstraint.activate(inlineVideoConstraints)
     }
 
+    @objc private func wifiPasswordEdited() {
+        wifiPasswordReadID = nil
+        wifiDeferredExitReadID = nil
+        passwordLoadedForSSID = ssidField.text ?? ""
+    }
     @objc private func networkNameChanged() {
+        wifiPasswordReadID = nil
+        wifiDeferredExitReadID = nil
         passwordLoadedForSSID = nil
         passwordField.text = ""; openNetworkSwitch.isOn = false; passwordStatus.text = ""
         // No table rebuild while the user is typing an SSID or composing Chinese text.
@@ -1597,20 +1803,56 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func loadWiFiPassword() {
         let ssid = ssidField.text ?? ""
-        // Merely revisiting the name field must not overwrite an edited password with Keychain.
-        guard passwordLoadedForSSID != ssid else { return }
+        guard !ssid.isEmpty, !wifiAddSavePending, !wifiPasswordReadPending,
+              passwordLoadedForSSID != ssid else { return }
         passwordLoadedForSSID = ssid
-        do {
-            if let saved = try WiFiCredentials.password(for: ssid) {
-                passwordField.text = saved; openNetworkSwitch.isOn = saved.isEmpty
-                passwordStatus.text = WiFiCredentials.isTemporary(for: ssid)
-                    ? WiFiCredentials.temporaryNotice : CWL("已读取保存的 Wi-Fi 配置")
+        let readID = UUID()
+        wifiPasswordReadID = readID
+        // A slow Keychain call cannot be cancelled safely. Keep the pending guard
+        // until it returns, but explain the wait without blocking the main queue.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.wifiPasswordReadID == readID else { return }
+            self.passwordStatus.text = CWL("Wi-Fi 密码读取较慢，请稍候或手动输入密码。")
+            self.statusLabel.text = CWL("Wi-Fi 密码读取较慢，请稍候或手动输入密码。")
+        }
+        wifiAddSaveQueue.async { [weak self] in
+            let result: Result<(String?, Bool), Error> = Result {
+                let saved = try WiFiCredentials.password(for: ssid)
+                return (saved, WiFiCredentials.isTemporary(for: ssid))
             }
-        } catch {
-            if (error as NSError).domain == NSOSStatusErrorDomain,
-               (error as NSError).code == Int(errSecMissingEntitlement) {
-                passwordStatus.text = CWL("当前签名无法读取钥匙串（-34018）。请手动输入 Wi-Fi 密码，密码仅在本次 App 运行期间保留。")
-            } else { passwordStatus.text = CWL("无法读取已保存的密码，请重新输入。") }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard self.wifiPasswordReadID == readID else { return }
+                self.wifiPasswordReadID = nil
+                let saveAfterRead = self.wifiDeferredExitReadID == readID
+                self.wifiDeferredExitReadID = nil
+                guard self.ssidField.text == ssid, !self.wifiAddSavePending else { return }
+                switch result {
+                case .success(let (saved, temporary)):
+                    if let saved {
+                        self.passwordField.text = saved; self.openNetworkSwitch.isOn = saved.isEmpty
+                        self.passwordStatus.text = temporary ? WiFiCredentials.temporaryNotice : CWL("已读取保存的 Wi-Fi 配置")
+                        // Only a successful read for the exited form can resume its save.
+                        if saveAfterRead, self.activeWiFiForm == nil, !self.running, !self.waitingForNetwork {
+                            self.saveCurrentWiFiPreset { [weak self] saved in
+                                guard let self, !saved else { return }
+                                self.alert(CWL("Wi-Fi 未保存"), self.passwordStatus.text ?? CWL("请重试"))
+                            }
+                        }
+                    }
+                case .failure(let error):
+                    self.passwordLoadedForSSID = nil
+                    if (error as NSError).domain == NSOSStatusErrorDomain,
+                       (error as NSError).code == Int(errSecMissingEntitlement) {
+                        self.passwordStatus.text = CWL("当前签名无法读取钥匙串（-34018）。请手动输入 Wi-Fi 密码，密码仅在本次 App 运行期间保留。")
+                    } else { self.passwordStatus.text = CWL("无法读取已保存的密码，请重新输入。") }
+                }
+                if let title = self.settingsNavigation?.topViewController?.title,
+                   title == CWL("Wi-Fi 网络") || title == CWL("Wi-Fi 预设"),
+                   !self.ssidField.isFirstResponder && !self.passwordField.isFirstResponder && !self.channelField.isFirstResponder {
+                    self.reloadVisibleSettings()
+                }
+            }
         }
     }
     private func refreshNetworkSummary() {
@@ -1618,20 +1860,24 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if needsNetworkDetails, !name.isEmpty {
             networkSummary.text = CWL("CarPlay Wi-Fi 预设：{1}", [String(describing: name)])
         } else if needsNetworkDetails {
-            networkSummary.text = CWL("请在连接设置的「Wi-Fi 与网络」确认当前网络。")
+            networkSummary.text = CWL("请在连接模式的「Wi-Fi 网络」确认当前网络。")
         } else {
             networkSummary.text = CWL("让两台设备连接同一个 Wi-Fi。")
         }
     }
     @objc private func detectNetwork() { refreshCurrentNetwork(requestPermission: true) }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus != .notDetermined, let resume = wifiDraftPermissionCompletion {
+            wifiDraftPermissionCompletion = nil
+            resume()
+        }
         guard awaitingNetworkPermission, manager.authorizationStatus != .notDetermined else { return }
         awaitingNetworkPermission = false
         guard activeWiFiForm != nil else { return }
         refreshCurrentNetwork(requestPermission: true)
     }
     private func refreshCurrentNetwork(requestPermission: Bool) {
-        guard canDetectWiFiName, !running, !waitingForNetwork, !fetchingNetwork, needsNetworkDetails,
+        guard !wifiAddSavePending, canDetectWiFiName, !running, !waitingForNetwork, !fetchingNetwork, needsNetworkDetails,
               requestPermission || (activeWiFiForm == nil && (ssidField.text ?? "").isEmpty) else { return }
         let authorization = locationManager.authorizationStatus
         if authorization == .notDetermined, requestPermission {
@@ -1650,7 +1896,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         NEHotspotNetwork.fetchCurrent { [weak self] network in
             DispatchQueue.main.async {
                 guard let self else { return }; self.fetchingNetwork = false
-                guard !self.running, !self.ssidField.isFirstResponder, !self.passwordField.isFirstResponder,
+                guard !self.wifiAddSavePending, !self.running, !self.ssidField.isFirstResponder, !self.passwordField.isFirstResponder,
                       self.ssidField.text == previousSSID, self.activeWiFiForm == form, !self.waitingForNetwork else { return }
                 guard let network else {
                     if requestPermission {
@@ -1667,41 +1913,148 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             }
         }
     }
-    @objc private func forgetWiFiPassword() {
+    // Explicit user action only. The system owns the consent dialog and network switch.
+    private func joinConfiguredWiFi() {
+        guard !running, !waitingForNetwork, !wifiJoinPending, !wifiAddSavePending, !wifiPasswordReadPending,
+              UIApplication.shared.applicationState == .active,
+              let form = activeWiFiForm else { return }
         let ssid = ssidField.text ?? ""
-        guard !ssid.isEmpty else { return }
-        do {
-            try WiFiCredentials.forget(ssid)
-            WiFiPresetStore.remove(ssid)
-            if let next = WiFiPresetStore.selected() { applyWiFiPreset(next) }
-            else {
-                ssidField.text = ""; passwordField.text = ""; channelField.text = "36"; openNetworkSwitch.isOn = false
-                passwordLoadedForSSID = nil
-                refreshWiFiPresetMenu(); refreshNetworkSummary()
+        let password = passwordField.text ?? ""
+        let open = openNetworkSwitch.isOn
+        guard !ssid.isEmpty, ssid.utf8.count <= 32,
+              open || (8...63).contains(password.utf8.count) else {
+            passwordStatus.text = CWL("请填写有效的 Wi-Fi 名称和密码。")
+            reloadVisibleSettings(); return
+        }
+        let configuration = open ? NEHotspotConfiguration(ssid: ssid) :
+            NEHotspotConfiguration(ssid: ssid, passphrase: password, isWEP: false)
+        configuration.joinOnce = true
+        wifiJoinPending = true
+        NEHotspotConfigurationManager.shared.apply(configuration) { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.wifiJoinPending = false
+                guard self.activeWiFiForm == form, !self.running, !self.waitingForNetwork,
+                      self.ssidField.text == ssid else { return }
+                if let error = error as NSError?,
+                   !(error.domain == NEHotspotConfigurationErrorDomain &&
+                     error.code == NEHotspotConfigurationError.alreadyAssociated.rawValue) {
+                    self.passwordStatus.text = CWL("无法加入 Wi-Fi，请在系统设置中手动连接。")
+                } else {
+                    self.passwordStatus.text = CWL("系统已处理连接请求，请确认 Wi-Fi 后手动启动。")
+                }
+                self.reloadVisibleSettings()
             }
-            passwordStatus.text = CWL("已删除 Wi-Fi 预设“{1}”", [String(describing: ssid)])
-        } catch { passwordStatus.text = CWL("无法删除 Wi-Fi 预设：{1}", [String(describing: error.localizedDescription)]) }
+        }
     }
-    private func saveSettings(_ config: ReceiverConfiguration) -> Bool {
-        do { if needsNetworkDetails { try WiFiCredentials.save(config.password, for: config.ssid) } }
-        catch { statusLabel.text = CWL("无法安全保存 Wi-Fi 密码，请重试。"); return false }
-        if needsNetworkDetails {
+    @objc private func forgetWiFiPassword() {
+        guard !wifiAddSavePending, !wifiPasswordReadPending else { return }
+        deleteWiFiPreset(ssidField.text ?? "")
+    }
+    private func deleteWiFiPreset(_ ssid: String) {
+        guard !ssid.isEmpty, !running, !waitingForNetwork, !wifiJoinPending, !wifiAddSavePending, !wifiPasswordReadPending else { return }
+        wifiAddSavePending = true
+        reloadVisibleSettings()
+        wifiAddSaveQueue.async { [weak self] in
+            let result: Result<Void, Error> = Result { try WiFiCredentials.forget(ssid) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.wifiAddSavePending = false
+                switch result {
+                case .success:
+                    WiFiPresetStore.remove(ssid)
+                    if self.ssidField.text == ssid {
+                        if let next = WiFiPresetStore.selected() { self.applyWiFiPreset(next) }
+                        else {
+                            self.ssidField.text = ""; self.passwordField.text = ""; self.channelField.text = "36"
+                            self.passwordLoadedForSSID = nil; self.openNetworkSwitch.isOn = false
+                            self.passwordStatus.text = nil
+                        }
+                    }
+                    self.refreshNetworkSummary()
+                    self.refreshWiFiPresetMenu()
+                case .failure:
+                    self.refreshWiFiPresetMenu()
+                    self.alert(CWL("删除失败"), CWL("无法删除保存的密码，请重试。"))
+                }
+            }
+        }
+    }
+    private func saveSettings(_ config: ReceiverConfiguration, completion: @escaping () -> Void) {
+        guard needsNetworkDetails else {
+            commitStartupSettings(config, includeWiFi: false)
+            completion()
+            return
+        }
+        guard !wifiAddSavePending, !wifiPasswordReadPending else { return }
+        let ticket = UUID(), scope = currentPreferenceScope
+        let mode = modeControl.selectedSegmentIndex
+        let target = remoteTarget
+        let isOpen = openNetworkSwitch.isOn
+        let ssid = config.ssid, password = config.password
+        startupWiFiTicket = ticket
+        wifiAddSavePending = true
+        waitingForNetwork = true
+        modeControl.isEnabled = false
+        setEditing(false)
+        refreshDerPlayPanel()
+        statusLabel.text = CWL("正在保存 Wi-Fi")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.startupWiFiTicket == ticket, self.wifiAddSavePending else { return }
+            self.statusLabel.text = CWL("请稍候")
+        }
+        wifiAddSaveQueue.async { [weak self] in
+            let result: Result<Void, Error> = Result { try WiFiCredentials.save(password, for: ssid) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.wifiAddSavePending = false
+                guard self.startupWiFiTicket == ticket else {
+                    self.refreshWiFiPresetMenu()
+                    return
+                }
+                self.startupWiFiTicket = nil
+                self.waitingForNetwork = false
+                self.modeControl.isEnabled = true
+                self.setEditing(true)
+                self.refreshDerPlayPanel()
+                guard !self.running, UIApplication.shared.applicationState == .active,
+                      self.currentPreferenceScope == scope, self.modeControl.selectedSegmentIndex == mode,
+                      self.needsNetworkDetails, self.ssidField.text == ssid,
+                      self.openNetworkSwitch.isOn == isOpen,
+                      (isOpen ? "" : (self.passwordField.text ?? "")) == password,
+                      (UInt8(self.channelField.text ?? "") ?? 36) == config.wifiChannel,
+                      mode != 2 || self.remoteTarget == target,
+                      mode != 1 || self.localCarPlayAddress == config.address else {
+                    self.statusLabel.text = CWL("已停止")
+                    return
+                }
+                switch result {
+                case .success:
+                    self.commitStartupSettings(config, includeWiFi: true)
+                    completion()
+                case .failure:
+                    self.statusLabel.text = CWL("无法安全保存 Wi-Fi 密码，请重试。")
+                    self.refreshWiFiPresetMenu()
+                }
+            }
+        }
+    }
+    private func commitStartupSettings(_ config: ReceiverConfiguration, includeWiFi: Bool) {
+        if includeWiFi {
             passwordStatus.text = WiFiCredentials.savedMessage(for: config.ssid)
             UserDefaults.standard.set(config.ssid, forKey: "wifiSSID")
             UserDefaults.standard.set(Int(config.wifiChannel), forKey: "wifiChannel")
             WiFiPresetStore.upsert(ssid: config.ssid, channel: config.wifiChannel, isOpen: openNetworkSwitch.isOn)
             refreshWiFiPresetMenu()
         }
-        audioSettingChanged()
         UserDefaults.standard.set(resolutionControl.selectedSegmentIndex, forKey: "displayResolutionIndex")
         saveDisplaySettings()
-        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex != 0, forKey: "pictureInPictureEnabled")
-        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex, forKey: "pictureInPictureTiming")
+        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex == 0, forKey: "pictureInPictureEnabled")
+        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex == 0 ? 1 : 0, forKey: "pictureInPictureTiming")
         UserDefaults.standard.set(videoOutputSwitch.isOn, forKey: "videoOutputEnabled")
         saveHeadUnitOutput()
         if config.videoOutputPort != nil { saveBrowserPorts() }
         if modeControl.selectedSegmentIndex != 2 { UserDefaults.standard.set(config.name, forKey: "receiverName") }
-        return true
     }
     @objc private func testSameDeviceTransport() {
         guard !running, !waitingForNetwork else {
@@ -1739,21 +2092,21 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         do {
             if importing {
                 identity = try AccessoryIdentityStore.importFromDocuments()
-                log(CWL("MFi 身份验证通过并已保存到本机 Keychain"))
+                log(CWL("MFi 证书验证通过并已保存到本机 Keychain"))
                 saveIdentityImportResult(CWL("success: MFi 身份已验证并保存到 Keychain"))
             } else if let keychainIdentity = try? AccessoryIdentityStore.load() {
                 identity = keychainIdentity
-                log(CWL("已从 Keychain 载入 MFi 身份，ECDSA 自检通过"))
+                log(CWL("已从 Keychain 载入 MFi 证书，ECDSA 自检通过"))
             } else {
                 identity = try AccessoryIdentityStore.loadFromBundle()
-                log(CWL("已从内置资源载入 MFi 身份，ECDSA 自检通过"))
+                log(CWL("已从内置资源载入 MFi 证书，ECDSA 自检通过"))
             }
             startButton.isEnabled = true
             statusLabel.text = CWL("可以开始连接")
         } catch {
             identity = nil
-            statusLabel.text = CWL("尚未导入有效的 MFi 身份"); startButton.isEnabled = false
-            log(CWL("请通过设置中的 MFi 身份管理导入合法身份。错误：{1}", [String(describing: error.localizedDescription)]))
+            statusLabel.text = CWL("需要导入 MFi 证书"); startButton.isEnabled = !derPlayIdentityImporting
+            log(CWL("请通过设置中的 MFi 证书管理导入合法证书。错误代码：{1}", [String((error as NSError).code)]))
             if importing { saveIdentityImportResult("failure: \(error.localizedDescription)") }
         }
     }
@@ -1763,13 +2116,112 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         do {
             try value.write(to: documents.appendingPathComponent("identity-import-result.txt"), atomically: true, encoding: .utf8)
         } catch {
-            log(CWL("无法保存身份导入结果：{1}", [String(describing: error.localizedDescription)]))
+            log(CWL("无法保存证书导入结果：{1}", [String(describing: error.localizedDescription)]))
         }
     }
+    // Only explicit instrument startup with a saved, matching preset enters this path.
+    private func prepareStartupWiFi() -> Bool {
+        guard !startupWiFiVerified, !restartingAutomatically, canDetectWiFiName,
+              UIApplication.shared.applicationState == .active,
+              modeControl.selectedSegmentIndex == 1, outputMode.usesInstrumentWiFi,
+              identity != nil, let preset = WiFiPresetStore.selected(),
+              preset.ssid == ssidField.text, preset.isOpen == openNetworkSwitch.isOn,
+              !preset.ssid.isEmpty, preset.ssid.utf8.count <= 32 else { return false }
+        let password = passwordField.text ?? ""
+        guard preset.isOpen || (8...63).contains(password.utf8.count) else { return false }
+        let ticket = UUID()
+        startupWiFiTicket = ticket
+        waitingForNetwork = true
+        modeControl.isEnabled = false
+        setEditing(false)
+        statusLabel.text = CWL("正在等待 Wi-Fi 分配 IP 地址…")
+        let scope = currentPreferenceScope
+        func valid() -> Bool {
+            self.startupWiFiTicket == ticket && self.waitingForNetwork && !self.running &&
+            UIApplication.shared.applicationState == .active && self.currentPreferenceScope == scope &&
+            self.ssidField.text == preset.ssid && WiFiPresetStore.selected() == preset &&
+            self.openNetworkSwitch.isOn == preset.isOpen && (self.passwordField.text ?? "") == password
+        }
+        func finish(_ proceed: Bool) {
+            guard self.startupWiFiTicket == ticket else { return }
+            self.startupWiFiTicket = nil
+            self.waitingForNetwork = false
+            self.modeControl.isEnabled = true
+            self.setEditing(true)
+            if proceed {
+                self.startupWiFiVerified = true
+                self.toggleReceiver()
+                self.startupWiFiVerified = false
+            } else {
+                self.statusLabel.text = CWL("无法加入 Wi-Fi，请在系统设置中手动连接。")
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+            guard self?.startupWiFiTicket == ticket else { return }
+            finish(false)
+        }
+        NEHotspotNetwork.fetchCurrent { network in
+            let current = network?.ssid
+            DispatchQueue.main.async {
+                guard valid() else { finish(false); return }
+                // Unknown SSID: preserve the legacy manual startup path; never switch blindly.
+                guard let current else { finish(true); return }
+                if current == preset.ssid { finish(true); return }
+                let configuration = preset.isOpen ? NEHotspotConfiguration(ssid: preset.ssid) :
+                    NEHotspotConfiguration(ssid: preset.ssid, passphrase: password, isWEP: false)
+                configuration.joinOnce = true
+                self.wifiJoinPending = true
+                NEHotspotConfigurationManager.shared.apply(configuration) { error in
+                    DispatchQueue.main.async {
+                        self.wifiJoinPending = false
+                        guard valid() else { finish(false); return }
+                        if let error = error as NSError?,
+                           !(error.domain == NEHotspotConfigurationErrorDomain &&
+                             error.code == NEHotspotConfigurationError.alreadyAssociated.rawValue) {
+                            finish(false); return
+                        }
+                        // System success is not proof of association. Verify SSID and IP.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            guard valid() else { finish(false); return }
+                            NEHotspotNetwork.fetchCurrent { network in
+                                let matched = network?.ssid == preset.ssid
+                                DispatchQueue.main.async {
+                                    finish(valid() && matched && self.localCarPlayAddress != nil)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return true
+    }
+    // Startup validation reports errors without changing the settings navigation stack.
+    private func reportStartupValidation(_ message: String) {
+        statusLabel.text = message
+        let presenter: UIViewController = settingsNavigation ?? self
+        guard presenter.viewIfLoaded?.window != nil, presenter.presentedViewController == nil,
+              !presenter.isBeingDismissed else { return }
+        alert(CWL("启动"), message)
+    }
+
     @objc private func toggleReceiver() {
         cancelAutomaticRestart()
         guard !derPlayIdentityImporting else { return }
         if running || waitingForNetwork { stop(); return }
+        guard !wifiJoinPending else {
+            statusLabel.text = CWL("请等待系统 Wi-Fi 连接请求完成。")
+            return
+        }
+        guard !needsNetworkDetails || !wifiPasswordReadPending else {
+            statusLabel.text = CWL("请稍候")
+            return
+        }
+        guard !wifiAddSavePending else {
+            statusLabel.text = CWL("请等待 Wi-Fi 预设保存完成。")
+            return
+        }
+        if prepareStartupWiFi() { return }
         if !restartingAutomatically {
             networkRestartCount = 0
             carLifeScreen = nil
@@ -1778,24 +2230,27 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         clearStartupHint()
         updateCheckTask?.cancel()
         view.endEditing(true)
+        guard !needsNetworkDetails || !wifiPasswordReadPending else {
+            statusLabel.text = CWL("请稍候")
+            return
+        }
         refreshNetworkAddresses()
         let channel = UInt8(channelField.text ?? "") ?? 36
         guard (1...196).contains(channel) else {
-            revealSettings(); statusLabel.text = CWL("兼容信道请输入 1–196，或留空使用默认值 36。"); return
+            reportStartupValidation(CWL("兼容信道请输入 1–196，或留空使用默认值 36。")); return
         }
         let outputPort: UInt16?
         let httpsPort: UInt16?
         if outputMode == .browser && videoOutputSwitch.isOn {
             if let error = browserPortError {
-                statusLabel.text = error
-                revealSettings(output: true)
+                reportStartupValidation(error)
                 return
             }
             outputPort = browserPort
             httpsPort = secureBrowserPort
         } else if outputMode == .airPlay {
             guard let browserPort else {
-                revealSettings(output: true)
+                reportStartupValidation(CWL("HTTP 端口请输入 1–65535。"))
                 return
             }
             outputPort = browserPort
@@ -1805,8 +2260,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             httpsPort = nil
         }
         guard !needsNetworkDetails || openNetworkSwitch.isOn || !(passwordField.text ?? "").isEmpty else {
-            statusLabel.text = CWL("请输入 Wi-Fi 密码；开放网络请选择“无密码”。")
-            revealSettings(wifi: true); return
+            reportStartupValidation(CWL("请输入 Wi-Fi 密码；开放网络请选择“无密码”。")); return
         }
         let password = !needsNetworkDetails || openNetworkSwitch.isOn ? "" : (passwordField.text ?? "")
         if modeControl.selectedSegmentIndex == 2 {
@@ -1817,50 +2271,70 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 ssid: ssidField.text ?? "", password: password, port: target.port,
                 wifiChannel: channel, audioEnabled: false, videoOutputPort: nil, deviceID: target.deviceID)
             do { try config.validate(requiresLocalAddress: false) } catch {
-                revealSettings(); statusLabel.text = error.localizedDescription; return
+                reportStartupValidation(error.localizedDescription); return
             }
-            guard saveSettings(config) else { return }
-            if keepAliveSwitch.isOn { keepAlive.start() }
+            saveSettings(config) { [self] in
+            keepAlive.start()
             view.endEditing(true); running = true; modeControl.isEnabled = false; setEditing(false)
             receiverPicker.isEnabled = false; receiverBrowser.stop()
             UIApplication.shared.isIdleTimerDisabled = true
             refreshDerPlayPanel()
             log(CWL("正在请求把本机 CarPlay 投送到 {1}（{2}:{3}）", [String(describing: target.name), String(describing: target.address), String(describing: target.port)]))
             sameDevice.start(configuration: config, identity: identity, expectsLocalControl: false)
+            }
             return
         }
         if modeControl.selectedSegmentIndex == 1 {
             guard let identity else { return }
             guard let address = localCarPlayAddress else { waitForLocalNetwork(); return }
             var config = ReceiverConfiguration(name: nameField.text ?? "DerPlay", address: address,
-                ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: soundOutput != .phone,
+                ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: supportsCarPlayAudio(outputPort: outputPort),
                 videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
                 deviceID: ReceiverConfiguration.persistentDeviceID())
-            if !restartingAutomatically { autoRestarts = 0; lightLevel = 0; reportedScreen = nil; primaryViewer = nil }
+            if !restartingAutomatically { autoRestarts = 0; lightLevel = 0; reportedScreen = nil; primaryViewer = nil; browserGeometryResolvedForSession = false }
             configureDisplay(&config)
             do { try config.validate() } catch {
                 log(CWL("无法启动本机 CarPlay：{1}", [String(describing: error.localizedDescription)]))
-                revealSettings(); statusLabel.text = error.localizedDescription; return
+                reportStartupValidation(error.localizedDescription); return
             }
             liveDisplay = DisplayPlan(width: config.width, height: config.height, fps: config.maxFPS,
-                                      codec: config.videoCodec, iconWidthMM: config.widthPhysicalMM)
+                                      codec: config.videoCodec, iconWidthMM: config.widthPhysicalMM,
+                                      ratioAdjustedForMinimumSide: planDisplay(for: targetScreen).ratioAdjustedForMinimumSide)
             updateVideoAspect()
-            guard saveSettings(config) else { return }
+            saveSettings(config) { [self] in
             sessionHasVehicleButton = CarPlayInfo.vehicleButtonSize(in: config) != nil
             // Activate while foregrounded, before the virtual CarPlay route is selected.
             // Waiting until willResignActive can fail to acquire an audio session on CarAudio.
-            if keepAliveSwitch.isOn { keepAlive.start() }
+            keepAlive.start()
             view.endEditing(true)
             running = true; modeControl.isEnabled = false; setEditing(false)
             refreshDerPlayPanel()
             startButton.configuration?.image = UIImage(systemName: "stop.fill")
-            statusLabel.text = CWL("正在启动本机 CarPlay…")
+            statusLabel.text = config.browserAutoAdaptBeforeCarPlay
+                ? CWL("等待接收设备打开访问地址，以识别屏幕尺寸…") : CWL("正在启动本机 CarPlay…")
             UIApplication.shared.isIdleTimerDisabled = true
             let startupID = UUID()
             localStartupID = startupID
             receiver.onBrowserDisplay = { [weak self] display, viewerID in
                 guard let self, self.localStartupID == startupID else { return }
                 self.browserReportedDisplay(display, viewerID: viewerID)
+            }
+            receiver.onBrowserGeometryFailure = { [weak self] message in
+                guard let self, self.localStartupID == startupID, self.running, self.outputMode == .browser else { return }
+                self.stop()
+                self.statusLabel.text = message
+                self.refreshDerPlayPanel()
+            }
+            receiver.onBrowserGeometryResolved = { [weak self] width, height, adjusted in
+                guard let self, self.localStartupID == startupID, self.running,
+                      self.outputMode == .browser, self.followsCarScreen else { return }
+                var plan = self.liveDisplay ?? self.planDisplay(for: self.reportedScreen)
+                plan.width = width; plan.height = height; plan.ratioAdjustedForMinimumSide = adjusted
+                self.liveDisplay = plan
+                self.browserGeometryResolvedForSession = true
+                self.updateVideoAspect()
+                self.reloadVisibleSettings()
+                self.refreshDerPlayPanel()
             }
             receiver.onBrowserStruggling = { [weak self] peer, reason in
                 guard let self, self.localStartupID == startupID, self.running, self.outputMode == .browser else { return }
@@ -1901,9 +2375,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                     let savedLayout = DeviceProfilePolicy().lookup(scope: self.currentPreferenceScope, evidence: geometry)
                     negotiated.rightHandDrive = savedLayout?.rightHandDrive ?? config.rightHandDrive
                     negotiated.dockPosition = (savedLayout?.dockPosition).flatMap { DerPlayDockPosition(rawValue: $0) } ?? config.dockPosition
-                    // CarLife currently supports only the iPhone audio route. Retain a
-                    // saved preference without enabling unsupported protocol audio.
-                    let preferredSound = savedLayout?.soundOutput.flatMap(SoundOutput.init(rawValue:)) ?? self.selectedSoundOutput
                     let showVehicleButton = savedLayout?.carButton ?? self.carButtonSwitch.isOn
                     if showVehicleButton {
                         negotiated.oemIconPNG = self.customVehicleIcon ?? self.defaultVehicleIcon(appearanceIndex: savedLayout?.appearance)
@@ -1927,15 +2398,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                         self.iconSizeControl.selectedSegmentIndex = ReceiverConfiguration.iconSizes.firstIndex {
                             $0.widthMM == negotiated.widthPhysicalMM
                         } ?? self.iconSizeControl.selectedSegmentIndex
-                        self.carLifeProfileDefaultAppearance = self.appearanceControl.selectedSegmentIndex
-                        if let appearance = savedLayout?.appearance, (0...2).contains(appearance) {
-                            self.appearanceControl.selectedSegmentIndex = appearance
-                        }
                         self.carLifeProfileDefaultDrive = self.driveControl.selectedSegmentIndex
                         self.driveControl.selectedSegmentIndex = negotiated.rightHandDrive ? 1 : 0
                         self.carLifeProfileDock = negotiated.dockPosition
-                        self.carLifeProfileDefaultSound = self.selectedSoundOutput
-                        self.selectedSoundOutput = preferredSound
                         self.carLifeProfileDefaultCarButton = self.carButtonSwitch.isOn
                         self.carButtonSwitch.isOn = showVehicleButton
                         // Remember the user's video preferences separately from the fixed CarLife wire format.
@@ -1956,11 +2421,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 receiver.onListening = { [weak self] port in
                     guard let self, self.running, self.localStartupID == startupID else { return }
                     var live = config; live.port = port
+                    if config.browserAutoAdaptBeforeCarPlay {
+                        if let plan = self.liveDisplay { live.width = plan.width; live.height = plan.height }
+                        self.statusLabel.text = CWL("已识别接收设备屏幕，正在启动 CarPlay…")
+                    }
                     self.controlBrowser.start()
                     self.sameDevice.start(configuration: live, identity: identity)
                 }
                 receiver.start(configuration: config, identity: identity, preferredViewer: primaryViewer)
-                watchStartupAddress(address)
+                if outputMode.usesInstrumentWiFi {
+                    watchInstrumentStartupRecovery(expectedSSID: config.ssid, startupID: startupID)
+                } else {
+                    watchStartupAddress(address)
+                }
+            }
             }
             return
         }
@@ -1968,19 +2442,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let addresses = ReceiverConfiguration.localIPv4Addresses()
         if !addresses.contains(ipField.text ?? "") { ipField.text = browserAddress ?? addresses.first }
         var config = ReceiverConfiguration(name: nameField.text ?? "DerPlay", address: ipField.text ?? "",
-            ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: soundOutput != .phone,
+            ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: supportsCarPlayAudio(outputPort: outputPort),
             videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
             deviceID: ReceiverConfiguration.persistentDeviceID())
+        // This branch waits for a different device, rather than starting SameDeviceProbe.
+        config.mayLoopBackLocally = false
         configureDisplay(&config)
         do { try config.validate(requiresWiFiCredentials: needsNetworkDetails) } catch {
-            statusLabel.text = error.localizedDescription
             log(CWL("无法启动：{1}", [String(describing: error.localizedDescription)]))
-            revealSettings(wifi: config.ssid.isEmpty)
+            reportStartupValidation(error.localizedDescription)
             return
         }
-        guard saveSettings(config) else { return }
+        saveSettings(config) { [self] in
         sessionHasVehicleButton = CarPlayInfo.vehicleButtonSize(in: config) != nil
-        if keepAliveSwitch.isOn { keepAlive.start() }
+        keepAlive.start()
         view.endEditing(true)
         running = true; modeControl.isEnabled = false; setEditing(false); refreshDerPlayPanel()
         startButton.configuration?.image = UIImage(systemName: "stop.fill")
@@ -1993,6 +2468,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         prepareExternalOutput(configuration: config)
         receiver.start(configuration: config, identity: identity)
+        }
     }
     private func startPreparedCarLife(configuration config: ReceiverConfiguration, identity: AccessoryIdentity,
                                       startupID: UUID) {
@@ -2015,6 +2491,69 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     private var localCarPlayAddress: String? {
         outputMode.usesInstrumentWiFi ? ReceiverConfiguration.wifiIPv4Address() : browserAddress
+    }
+
+    private func startRuntimeNetworkRecoveryIfNeeded() {
+        guard running, modeControl.selectedSegmentIndex == 1, outputMode.usesInstrumentWiFi else {
+            runtimeNetworkRecovery.stop()
+            return
+        }
+        let available = lastWiFiPathSatisfied ?? (wifiPathMonitor.currentPath.status == .satisfied)
+        runtimeNetworkRecovery.start(pathSatisfied: available)
+    }
+
+    private func handleRuntimeWiFiPathChange(_ available: Bool) {
+        lastWiFiPathSatisfied = available
+        guard running, displayedVideo, modeControl.selectedSegmentIndex == 1,
+              outputMode.usesInstrumentWiFi else { return }
+        let event = runtimeNetworkRecovery.pathChanged(isSatisfied: available,
+            at: ProcessInfo.processInfo.systemUptime)
+        switch event {
+        case .outageBegan:
+            runtimeNetworkRecoveryWork?.cancel(); runtimeNetworkRecoveryWork = nil
+            log(CWL("检测到仪表 Wi-Fi 网络中断，暂不重启正在运行的会话"))
+        case .restoredAfterOutage:
+            log(CWL("仪表 Wi-Fi 已恢复，等待连接稳定及视频流状态确认"))
+            scheduleRuntimeNetworkRecoveryCheck()
+        case .none:
+            break
+        }
+    }
+
+    private func scheduleRuntimeNetworkRecoveryCheck() {
+        guard runtimeNetworkRecovery.hasPendingRecovery,
+              UIApplication.shared.applicationState == .active,
+              running, displayedVideo, modeControl.selectedSegmentIndex == 1,
+              outputMode.usesInstrumentWiFi else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let videoAge = receiver.lastVideoArrivalUptime.map { max(0, now - $0) } ?? 0
+        guard let delay = runtimeNetworkRecovery.delayUntilEligible(at: now, videoAge: videoAge),
+              let startupID = localStartupID else { return }
+        runtimeNetworkRecoveryWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.running, self.localStartupID == startupID,
+                  self.runtimeNetworkRecovery.hasPendingRecovery else { return }
+            guard UIApplication.shared.applicationState == .active else { return }
+            let checkedAt = ProcessInfo.processInfo.systemUptime
+            let currentVideoAge = self.receiver.lastVideoArrivalUptime.map { max(0, checkedAt - $0) } ?? 0
+            guard self.localCarPlayAddress != nil, currentVideoAge >= 10 else {
+                self.runtimeNetworkRecovery.cancelPendingRecovery()
+                self.log(CWL("网络恢复后视频流已恢复或地址不可用，不执行自动重启"))
+                return
+            }
+            guard self.networkRestartCount < 2, self.autoRestarts < 2 else {
+                self.runtimeNetworkRecovery.cancelPendingRecovery()
+                self.log(CWL("本次连接的自动恢复次数已达上限，保留当前会话供手动处理"))
+                return
+            }
+            guard self.runtimeNetworkRecovery.claimRecovery(at: checkedAt, videoAge: currentVideoAge,
+                hasAddress: true, appActive: true) else { return }
+            self.networkRestartCount += 1
+            self.log(CWL("网络已恢复但视频流仍中断，执行第 {1} 次有限自动恢复", [String(self.networkRestartCount)]))
+            self.restartCarPlay(reason: CWL("仪表 Wi-Fi 恢复后视频流未恢复"), forPerformance: true)
+        }
+        runtimeNetworkRecoveryWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func refreshNetworkAddresses() {
@@ -2051,6 +2590,72 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
     }
 
+    // Only instrument startup recovery; never restart an already displayed session.
+    private func watchInstrumentStartupRecovery(expectedSSID: String, startupID: UUID) {
+        networkStartupTask?.cancel()
+        instrumentRecoveryProbe.start(expectedSSID: expectedSSID)
+        instrumentRecoveryResult = nil
+        networkStartupTask = Task { [weak self] in
+            var policy = DerPlayNetworkRecoveryPolicy()
+            var epoch: UUID?
+            let deadline = ProcessInfo.processInfo.systemUptime + 45
+            while ProcessInfo.processInfo.systemUptime < deadline {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled, let self, self.running, !self.displayedVideo,
+                      self.localStartupID == startupID else { return }
+                if epoch != self.instrumentRecoveryEpoch {
+                    epoch = self.instrumentRecoveryEpoch
+                    policy = DerPlayNetworkRecoveryPolicy()
+                }
+                self.refreshNetworkAddresses()
+                let active = UIApplication.shared.applicationState == .active
+                self.instrumentRecoveryProbe.setForeground(active)
+                guard active else { _ = policy.sample(address: nil, active: false); continue }
+                guard let address = self.localCarPlayAddress else {
+                    _ = policy.sample(address: nil, active: true); continue
+                }
+                guard let ticket = self.instrumentRecoveryProbe.begin() else { continue }
+                self.instrumentRecoveryResult = nil
+                NEHotspotNetwork.fetchCurrent { [weak self] network in
+                    let ssid = network?.ssid
+                    DispatchQueue.main.async {
+                        guard let self, self.running, !self.displayedVideo,
+                              self.localStartupID == startupID,
+                              UIApplication.shared.applicationState == .active else { return }
+                        let result = self.instrumentRecoveryProbe.complete(ticket, ssid: ssid,
+                            currentAddress: self.localCarPlayAddress)
+                        if result != .ignored { self.instrumentRecoveryResult = result }
+                    }
+                }
+                // Bound each system lookup to two seconds; late callbacks are ignored.
+                for _ in 0..<20 {
+                    if self.instrumentRecoveryResult != nil { break }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    guard !Task.isCancelled, self.localStartupID == startupID, self.running,
+                          !self.displayedVideo else { return }
+                    if UIApplication.shared.applicationState != .active { break }
+                }
+                self.instrumentRecoveryProbe.cancel(ticket)
+                guard ProcessInfo.processInfo.systemUptime < deadline,
+                      epoch == self.instrumentRecoveryEpoch,
+                      UIApplication.shared.applicationState == .active,
+                      self.instrumentRecoveryResult == .eligible,
+                      self.localCarPlayAddress == address else {
+                    _ = policy.sample(address: nil, active: false); continue
+                }
+                guard policy.sample(address: address, active: true) == .retry,
+                      self.networkRestartCount < 2 else { continue }
+                self.networkRestartCount += 1
+                self.log("DerPlay: instrument Wi-Fi recovered during startup")
+                self.stop()
+                self.restartingAutomatically = true
+                self.toggleReceiver()
+                self.restartingAutomatically = false
+                return
+            }
+        }
+    }
+
     private func watchStartupAddress(_ initialAddress: String) {
         networkStartupTask?.cancel()
         networkStartupTask = Task { [weak self] in
@@ -2080,18 +2685,32 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
 
     private func stop() {
         localStartupID = nil
+        startupWiFiTicket = nil
+        runtimeNetworkRecovery.stop()
+        runtimeNetworkRecoveryWork?.cancel(); runtimeNetworkRecoveryWork = nil
+        backgroundNetworkAddress = nil
+        instrumentRecoveryProbe.stop()
+        instrumentRecoveryResult = nil
         cancelAutomaticRestart()
         networkStartupTask?.cancel()
         networkStartupTask = nil
         waitingForNetwork = false
         clearStartupHint()
         airPlayReady = false
+        airPlayItemObservation?.invalidate()
         airPlayItemObservation = nil
+        airPlayRouteObservation?.invalidate()
         airPlayRouteObservation = nil
+        airPlayTimeObservation?.invalidate()
         airPlayTimeObservation = nil
         airPlayHealthTimer?.invalidate(); airPlayHealthTimer = nil
         airPlayLastVideoAt = nil; airPlayWaitingSince = nil
         airPlaySourceWasStale = false
+        airPlayLastRecoveryAt = nil
+        airPlayRecoveryCount = 0
+        airPlayTransportRecovery.reset()
+        airPlayBufferTelemetry.reset()
+        resetAirPlayProgress()
         airPlayPlayer?.pause()
         airPlayPlayer?.replaceCurrentItem(with: nil)
         airPlayPlayer?.allowsExternalPlayback = false
@@ -2103,11 +2722,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         running = false
         sessionHasVehicleButton = false
         screenAdaptation?.cancel(); screenAdaptation = nil
-        reportedScreen = nil; primaryViewer = nil; pendingRestartReason = nil
+        reportedScreen = nil; primaryViewer = nil; browserGeometryResolvedForSession = false; pendingRestartReason = nil
         carLifeScreen = nil; carLifeNegotiationTimeout?.cancel(); carLifeNegotiationTimeout = nil
         pictureInPicture.stop(); keepAlive.stop(); skippedLocalVideo = false
         hideFullscreen(); hidePreviewFullscreenButton()
-        displayedVideo = false; didRequestImmediatePiP = false
+        displayedVideo = false
         videoSurface.reset(); inlineVideoContainer.isHidden = true
         refreshDerPlayPanel()
         receiver.onListening = nil; bluetooth.stop(); sameDevice.stop(); controlBrowser.stop(); receiver.stop()
@@ -2115,7 +2734,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         modeControl.isEnabled = true
         UIApplication.shared.isIdleTimerDisabled = false; setEditing(true)
         modeChanged()
-        statusLabel.text = identity == nil ? CWL("需要导入 MFi 身份") : CWL("已停止")
+        statusLabel.text = identity == nil ? CWL("需要导入 MFi 证书") : CWL("已停止")
         log(CWL("CarPlay 接收已停止"))
     }
 
@@ -2159,14 +2778,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             : local ? CWL("无需外接盒子，直接在这台 iPhone 上启动并显示 CarPlay。") : CWL("接收另一台 iPhone 的导航、音乐和触控画面。")
         connectionHelp.text = remote
             ? CWL("让 iPhone 和 iPad 连接同一个 Wi-Fi。")
-            : local ? CWL("先在系统设置连接 Wi-Fi，再在 DerPlay 的「Wi-Fi 与网络」确认当前网络。")
+            : local ? CWL("先在系统设置连接 Wi-Fi，再在 DerPlay 的「Wi-Fi 网络」确认当前网络。")
             : CWL("先启动此接收屏，再从另一台 iPhone 发起连接。")
         refreshNetworkSummary()
         refreshVideoOutputSummary()
-        startButton.isEnabled = identity != nil && !derPlayIdentityImporting
+        startButton.isEnabled = !derPlayIdentityImporting
         startButton.configuration?.image = UIImage(systemName: "play.fill")
         refreshDerPlayPanel()
-        statusLabel.text = identity == nil ? CWL("需要导入 MFi 身份") : remote ? CWL("请选择接收端") : CWL("准备就绪")
+        statusLabel.text = identity == nil ? CWL("需要导入 MFi 证书") : remote ? CWL("请选择接收端") : CWL("准备就绪")
         refreshCurrentNetwork(requestPermission: false)
     }
     private func setEditing(_ value: Bool) {
@@ -2180,6 +2799,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         codecControl.isEnabled = value
         [sizeModeControl, iconSizeControl, performanceControl].forEach { $0.isEnabled = value }
         [autoRestartSwitch, showTouchesSwitch, carButtonSwitch].forEach { $0.isEnabled = value }
+        browserViewAreaProbeSwitch.isEnabled = value
         driveControl.isEnabled = value
         bluetoothSetupSwitch.isEnabled = value
         transportProbeButton.isEnabled = value
@@ -2198,9 +2818,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         carLifeAddressField.isEnabled = value
     }
     @objc private func willResignActive() {
+        instrumentRecoveryEpoch = UUID()
+        instrumentRecoveryProbe.setForeground(false)
+        instrumentRecoveryResult = nil
         guard running else { return }
         // Normally already running; retry if foreground activation failed.
-        if keepAliveSwitch.isOn { keepAlive.start() }
+        keepAlive.start()
         if outputMode == .zeehoSEPlus {
             receiver.setLocalVideoEnabled(false)
             skippedLocalVideo = true
@@ -2212,7 +2835,16 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         pictureInPicture.awaitAutomaticStart()
     }
     @objc private func becameActive() {
+        startForegroundMaintenance()
         refreshNetworkAddresses()
+        handleRuntimeWiFiPathChange(wifiPathMonitor.currentPath.status == .satisfied)
+        if let previousAddress = backgroundNetworkAddress, let currentAddress = localCarPlayAddress,
+           previousAddress != currentAddress, running, displayedVideo, outputMode.usesInstrumentWiFi,
+           runtimeNetworkRecovery.noteAddressChanged(at: ProcessInfo.processInfo.systemUptime) == .restoredAfterOutage {
+            log(CWL("后台期间 Wi-Fi 地址发生变化，等待视频流状态确认后再决定是否恢复连接"))
+            scheduleRuntimeNetworkRecoveryCheck()
+        }
+        backgroundNetworkAddress = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             self?.checkForUpdates(manual: false)
         }
@@ -2221,7 +2853,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if running { UIApplication.shared.isIdleTimerDisabled = true }
         resumeLocalVideo()
         pictureInPicture.sourceMayBeReady()
-        if running, keepAliveSwitch.isOn { keepAlive.start() }
+        if running { keepAlive.start(); keepAlive.returnedToForeground() }
+        if running, outputMode == .airPlay { refreshAirPlayPlaybackStatus() }
         if let reason = pendingRestartReason {
             pendingRestartReason = nil
             restartCarPlay(reason: reason, forPerformance: true)
@@ -2230,9 +2863,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
     }
     @objc private func pictureInPictureTimingChanged() {
-        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex, forKey: "pictureInPictureTiming")
-        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex != 0, forKey: "pictureInPictureEnabled")
-        didRequestImmediatePiP = false
+        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex == 0 ? 1 : 0, forKey: "pictureInPictureTiming")
+        UserDefaults.standard.set(pictureInPictureTiming.selectedSegmentIndex == 0, forKey: "pictureInPictureEnabled")
         pictureInPicture.cancelPendingStart()
         updatePictureInPicturePolicy()
     }
@@ -2242,12 +2874,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             pictureInPicture.setAutomatic(false)
             return
         }
-        let timing = pictureInPictureTiming.selectedSegmentIndex
-        pictureInPicture.setAutomatic(running && displayedVideo && timing != 0)
-        guard running, displayedVideo, timing == 2, !didRequestImmediatePiP,
-              presentedViewController == nil else { return }
-        didRequestImmediatePiP = true
-        _ = pictureInPicture.start()
+        pictureInPicture.setAutomatic(running && displayedVideo && pictureInPictureTiming.selectedSegmentIndex == 0)
     }
 
     // MARK: Follow the head unit
@@ -2256,6 +2883,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard running, outputMode == .browser else { return }
         reportedScreen = display.map(CarScreenStore.recordCurrent)
         primaryViewer = viewerID
+        if running, !displayedVideo, outputMode == .browser, followsCarScreen, !browserGeometryResolvedForSession, let display {
+            let fillsScreen = DisplayGeometry.fillsScreen(viewportWidth: display.width, viewportHeight: display.height,
+                screenWidth: display.screenWidth, screenHeight: display.screenHeight, fullscreen: display.fullscreen)
+            statusLabel.text = fillsScreen
+                ? CWL("已识别接收设备屏幕 {1}×{2}，正在准备 CarPlay…", [String(display.width), String(display.height)])
+                : CWL("请在接收设备浏览器点全屏按钮，让页面占满屏幕后再继续…")
+        }
         refreshScreenMenu()
         scheduleScreenAdaptation()
     }
@@ -2278,6 +2912,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard running, UIApplication.shared.applicationState == .active,
               let screen = reportedScreen, let live = liveDisplay else { return }
         let wanted = planDisplay(for: screen)
+        guard !wanted.ratioUnsupported else { return }
         // Ignore differences under 4 %: rounding, or a browser bar appearing.
         func near(_ a: Int, _ b: Int) -> Bool { abs(a - b) * 25 <= max(a, b) }
         let sizeChanged = !(near(wanted.width, live.width) && near(wanted.height, live.height))
@@ -2360,8 +2995,22 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var usesScooterArtwork: Bool { modeControl.selectedSegmentIndex == 1 && outputMode.usesInstrumentWiFi }
     private var vehicleSettingsIcon: (String, UIColor) { usesScooterArtwork ? ("DerPlayVehicleScooter", UIColor(white: 0.17, alpha: 1)) : ("DerPlayVehicleCar", .systemGray) }
     private func defaultVehicleIcon(appearanceIndex: Int? = nil) -> Data? {
-        if usesScooterArtwork, let image = UIImage(named: "DerPlayVehicleScooter") { return image.pngData() }
-        let choice = ReceiverConfiguration.Appearance(rawValue: appearanceIndex ?? appearanceControl.selectedSegmentIndex) ?? .system
+        if usesScooterArtwork {
+            // The settings artwork is 512 px; /info accepts square PNGs up to 192 px.
+            // Use the dedicated 120 px OEM asset, with a normalized fallback of the same artwork.
+            if let image = UIImage(named: "DerPlayVehicleScooterOEM") { return image.pngData() }
+            if let image = UIImage(named: "DerPlayVehicleScooter") {
+                let size = CGSize(width: 120, height: 120)
+                let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+                format.preferredRange = .standard
+                return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+                    context.cgContext.setFillColor(UIColor(white: 43.0 / 255.0, alpha: 1).cgColor)
+                    context.cgContext.fill(CGRect(origin: .zero, size: size))
+                    image.draw(in: CGRect(origin: .zero, size: size))
+                }
+            }
+        }
+        let choice = ReceiverConfiguration.Appearance(rawValue: 0) ?? .system
         let night = choice == .dark || (choice == .system && systemAppearanceIsDark)
         let name = night ? "DerPlayVehicleNight" : "DerPlayVehicleDay"
         return UIImage(named: name)?.pngData() ?? Self.carButtonIcon
@@ -2382,14 +3031,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         DispatchQueue.main.async { [weak self] in self?.applyAppearance() }
     }
     @objc private func backgrounded() {
-        updateCheckTask?.cancel()
+        if startupWiFiTicket != nil { stop() }
+        pauseForegroundMaintenance()
         receiverBrowser.stop()
         guard running else { return }
+        if displayedVideo && outputMode.usesInstrumentWiFi { backgroundNetworkAddress = localCarPlayAddress }
         // willResignActive may have failed to start it (e.g. the session was busy); try once more
         // before deciding the session cannot survive in the background.
-        if keepAliveSwitch.isOn, !keepAlive.isRunning, keepAlive.start() { log(CWL("后台保持在进入后台时重试成功")) }
+        if !keepAlive.isRunning, keepAlive.start() { log(CWL("后台保持在进入后台时重试成功")) }
+        keepAlive.enteredBackground()
         if canRunInBackground {
-            log(keepAlive.isRunning ? CWL("App 已进入后台，CarPlay 继续运行") : CWL("App 已进入后台，由画中画保持运行"))
+            log(keepAlive.isActuallyPlaying ? CWL("App 已进入后台，CarPlay 继续运行") : CWL("App 已进入后台，由画中画保持运行"))
+        } else if keepAlive.isRunning {
+            // An interruption is not a user stop; allow the system to resume if permitted.
+            log(CWL("后台音频暂不可用，iOS 可能挂起会话"))
         } else {
             log(CWL("App 已进入后台且没有画中画或后台保持，iOS 会挂起 App，已停止 CarPlay"))
             stop()
@@ -2413,7 +3068,7 @@ extension ReceiverViewController {
         let image = DerPlayPreviewMark(frame: .zero)
         image.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([image.widthAnchor.constraint(equalToConstant: 64), image.heightAnchor.constraint(equalToConstant: 64)])
-        derPlayPreviewMessage.text = "等待启动 CarPlay"; derPlayPreviewMessage.textColor = .lightGray
+        derPlayPreviewMessage.text = CWL("等待启动 CarPlay"); derPlayPreviewMessage.textColor = .lightGray
         derPlayPreviewMessage.textAlignment = .center; derPlayPreviewMessage.font = .preferredFont(forTextStyle: .headline)
         derPlayPreviewMessage.numberOfLines = 0
         let content = UIStackView(arrangedSubviews: [image, derPlayPreviewMessage])
@@ -2422,7 +3077,7 @@ extension ReceiverViewController {
         derPlayPreviewPlaceholder.backgroundColor = .black
         derPlayPreviewPlaceholder.layer.cornerRadius = 25
         derPlayPreviewPlaceholder.layer.cornerCurve = .continuous
-        DerPlayGlassPalette.shadow(derPlayPreviewPlaceholder, radius: 16, offset: 8)
+        DerPlayGlassPalette.previewShadow(derPlayPreviewPlaceholder)
         derPlayPreviewPlaceholder.addSubview(content)
         let previewHeight = derPlayPreviewPlaceholder.heightAnchor.constraint(equalTo: derPlayPreviewPlaceholder.widthAnchor, multiplier: displayAspectHeight)
         previewHeight.priority = .defaultLow
@@ -2435,11 +3090,27 @@ extension ReceiverViewController {
         refreshDerPlayPanel()
     }
 
+    private func copyBrowserAccessAddress(_ address: String) {
+        // Keep the existing clipboard format (host:port); feedback is presentation only.
+        guard glassDashboardState.browserCopyAddress == address else { return }
+        UIPasteboard.general.string = address
+        DerPlayHaptics.lightImpact()
+        glassDashboardState.browserAddressCopied = true
+        UIAccessibility.post(notification: .announcement, argument: CWL("访问地址已复制"))
+        let generation = UUID()
+        browserCopyFeedbackGeneration = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.browserCopyFeedbackGeneration == generation else { return }
+            self.glassDashboardState.browserAddressCopied = false
+        }
+    }
+
     private func makeDerPlayConnectionPanel() -> UIHostingController<DerPlayGlassDashboard> {
         let host = UIHostingController(rootView: DerPlayGlassDashboard(state: glassDashboardState,
             settings: { [weak self] in self?.revealSettings() },
-            modes: { [weak self] in self?.revealSettings(modes: true) },
             connection: { [weak self] in self?.revealSettings(output: true) },
+            importCertificate: { [weak self] in self?.revealSettings(certificate: true) },
+            copyBrowserAddress: { [weak self] address in self?.copyBrowserAccessAddress(address) },
             airPlayPicker: airPlayRoutePicker))
         addChild(host)
         host.view.backgroundColor = .clear
@@ -2473,7 +3144,38 @@ extension ReceiverViewController {
                   !lines.contains(text), text != CWL("已停止"), text != CWL("准备就绪"), text != CWL("可以开始连接") else { continue }
             lines.append(text)
         }
+        let needsCertificate = identity == nil && !derPlayIdentityImporting && !running && !waitingForNetwork
+        let certificatePrompt = CWL("需要导入 MFi 证书")
+        // Network/status messages must not hide the only direct certificate import entry.
+        if needsCertificate && !lines.contains(certificatePrompt) { lines.append(certificatePrompt) }
+        if !needsCertificate { lines.removeAll { $0 == certificatePrompt } }
+        glassDashboardState.needsCertificate = needsCertificate
         if glassDashboardState.statusLines != lines { glassDashboardState.statusLines = lines }
+        let browserGeometryPreflightNeedsAddress = outputMode == .browser
+            && videoOutputSwitch.isOn
+            && running
+            && !displayedVideo
+            && modeControl.selectedSegmentIndex == 1
+            && followsCarScreen
+        let canCopyBrowserAddress = (outputMode == .browser
+            && videoOutputSwitch.isOn
+            && running
+            && displayedVideo
+            && statusLabel.text == CWL("CarPlay窗口已开启")) || browserGeometryPreflightNeedsAddress
+        let browserCopyAddress: String? = canCopyBrowserAddress
+            ? browserAddress.flatMap { address in browserPort.map { "\(address):\($0)" } }
+            : nil
+        if glassDashboardState.browserCopyAddress != browserCopyAddress {
+            browserCopyFeedbackGeneration = UUID()
+            glassDashboardState.browserAddressCopied = false
+            glassDashboardState.browserCopyAddress = browserCopyAddress
+        }
+        let browserCopyLabel = browserCopyAddress.map {
+            CWL("访问地址：{1}", ["http://\($0)"])
+        }
+        if glassDashboardState.browserCopyAddressLabel != browserCopyLabel {
+            glassDashboardState.browserCopyAddressLabel = browserCopyLabel
+        }
         let showAirPlay = outputMode == .airPlay && !isLocalCarPlayOnly
         if glassDashboardState.showsAirPlayPicker != showAirPlay { glassDashboardState.showsAirPlayPicker = showAirPlay }
         let ready = showAirPlay && running && airPlayReady
@@ -2485,61 +3187,79 @@ extension ReceiverViewController {
         derPlayPreviewPlaceholder.isHidden = displayedVideo
         inlineVideoShadow.isHidden = !displayedVideo
         let active = running || waitingForNetwork || carLifeNegotiationTimeout != nil
+        let playbackState = [running, waitingForNetwork, carLifeNegotiationTimeout != nil]
+        if lastSettingsPlaybackState != playbackState {
+            lastSettingsPlaybackState = playbackState
+            scheduleSettingsPlaybackRefresh()
+        }
+        startButton.tintColor = active ? DerPlayGlassPalette.stopRed : DerPlayGlassPalette.startGreen
         startButton.configuration?.baseBackgroundColor = active ? DerPlayGlassPalette.stopRed : DerPlayGlassPalette.startGreen
-        startButton.configuration?.title = active ? CWL("停止") : CWL("启动")
+        connectionControlLayer?.active = active
+        startButton.isEnabled = active || !derPlayIdentityImporting
         startButton.configuration?.image = UIImage(systemName: active ? "stop.fill" : "play.fill")
         let localOnly = outputMode == .browser && !videoOutputSwitch.isOn
         let modeTitle = localOnly ? "本机 CarPlay" : (outputMode == .carLife ? "百度 CarLife" : outputMode.title)
         refreshDashboardStatus()
         if glassDashboardState.mode != modeTitle { glassDashboardState.mode = modeTitle }
         if glassDashboardState.locked != (running || waitingForNetwork) { glassDashboardState.locked = running || waitingForNetwork }
-        derPlayPreviewMessage.text = carLifeNegotiationTimeout != nil ? "正在协商 CarLife 显示分辨率…" : (running || waitingForNetwork ? "正在启动 CarPlay…" : "等待启动 CarPlay")
+        derPlayPreviewMessage.text = carLifeNegotiationTimeout != nil ? CWL("正在协商 CarLife 显示分辨率…") : (running || waitingForNetwork ? CWL("正在启动 CarPlay…") : CWL("等待启动 CarPlay"))
     }
 
-    // Both home and settings share the existing output selection/save callbacks.
-    private func interconnectPage() -> SettingsPageController {
-        page("互联方式") { [unowned self] in
-            let locked = running || waitingForNetwork
-            func row(_ title: String, mode: HeadUnitOutput, enabled: Bool = true) -> SettingsRow {
-                let selected = outputMode == mode && (mode != .browser || enabled == videoOutputSwitch.isOn)
-                let icon: (String, UIColor)
-                switch mode {
-                case .browser: icon = enabled ? ("globe", .systemBlue) : ("iphone", UIColor(red: 1, green: 176.0 / 255.0, blue: 0, alpha: 1))
-                case .carLife: icon = ("DerPlayBrandCarLife", .systemBlue)
-                case .airPlay: icon = ("airplay.video", .systemPurple)
-                case .ninebot, .ninebotSeven, .ninebot43: icon = ("DerPlayBrandNinebot", .systemBlue)
-                case .tailing: icon = ("DerPlayBrandTailing", .systemRed)
-                case .zeeho, .zeehoSEPlus, .zeehoAE2: icon = ("DerPlayBrandZeeho", .systemOrange)
-                case .cfmoto5, .cfmoto62: icon = ("DerPlayBrandCfmoto", .systemPurple)
-                }
+    // The native selection page reuses the existing output selection/save callbacks.
+    private func interconnectRows() -> [SettingsRow] {
+        let locked = running || waitingForNetwork
+        func row(_ title: String, mode: HeadUnitOutput, enabled: Bool = true) -> SettingsRow {
+            let selected = outputMode == mode && (mode != .browser || enabled == videoOutputSwitch.isOn)
+            let icon: (String, UIColor)
+            switch mode {
+            case .browser: icon = enabled ? ("globe", .systemBlue) : ("iphone", UIColor(red: 1, green: 149.0 / 255.0, blue: 0, alpha: 1))
+            case .carLife: icon = ("DerPlayBrandCarLife", .systemBlue)
+            case .airPlay: icon = ("airplay.video", .systemPurple)
+            case .ninebot, .ninebotSeven, .ninebot43: icon = ("DerPlayBrandNinebot", .systemBlue)
+            case .tailing: icon = ("DerPlayBrandTailing", .systemRed)
+            case .zeeho, .zeehoSEPlus, .zeehoAE2: icon = ("DerPlayBrandZeeho", .systemOrange)
+            case .cfmoto5, .cfmoto62: icon = ("DerPlayBrandCfmoto", .systemPurple)
+            }
+            if locked || wifiAddSavePending {
                 if locked {
-                    return .info(title, selected ? "当前使用" : "停止后可选", icon: icon)
+                    return SettingsRow.action(title, icon: icon, detail: { selected ? "当前使用" : "停止后可选" }) {}
+                        .enabledWhen { [weak self] in self?.connectionSettingsEditable == true }
                 }
-                var item = SettingsRow.action(title, icon: icon) { [weak self] in
-                    guard let self, !self.running, !self.waitingForNetwork else { return }
-                    self.headUnitOutput.selectedSegmentIndex = mode.menuIndex
-                    if mode == .browser { self.videoOutputSwitch.isOn = enabled }
-                    self.headUnitOutputChanged()
-                    if mode == .browser { self.videoOutputToggled() }
-                    self.closeGlassSettings()
-                }
-                item.checked = { selected }
-                return item
+                return .info(title, selected ? "当前使用" : "停止后可选", icon: icon)
             }
-            let planned = DerPlayUpstreamBridge.extensionMenuItems().compactMap { $0 as? UIAction }
-            func plannedRow(_ id: String, icon: String) -> SettingsRow? {
-                planned.first { $0.identifier.rawValue == id }.map {
-                    .info($0.title.replacingOccurrences(of: "（开发中）", with: ""), "尚未开放", icon: (icon, .systemBlue))
-                }
+            var item = SettingsRow.action(title, icon: icon) { [weak self] in
+                guard let self, !self.running, !self.waitingForNetwork, !self.wifiAddSavePending,
+                      let navigation = self.settingsNavigation, navigation.transitionCoordinator == nil,
+                      navigation.viewControllers.count > 1 else { return }
+                self.headUnitOutput.selectedSegmentIndex = mode.menuIndex
+                if mode == .browser { self.videoOutputSwitch.isOn = enabled }
+                self.headUnitOutputChanged()
+                if mode == .browser { self.videoOutputToggled() }
+                navigation.popViewController(animated: true)
             }
-            var items = [row("本机 CarPlay", mode: .browser, enabled: false),
-                         row(HeadUnitOutput.browser.title, mode: .browser),
-                         row(HeadUnitOutput.airPlay.title, mode: .airPlay)]
-            if let carlink = plannedRow("derplay.iccoa.direct", icon: "DerPlayBrandCarlink") { items.append(carlink) }
-            items.append(row("百度 CarLife", mode: .carLife))
-            if let easy = plannedRow("derplay.easyconnection", icon: "DerPlayBrandEasyConnection") { items.append(easy) }
-            items.append(contentsOf: HeadUnitOutput.menuOrder.filter { $0 != .browser && $0 != .airPlay && $0 != .carLife }.map { row($0.title, mode: $0) })
-            return [SettingsSection(items)]
+            item.checked = { selected }
+            return item
+        }
+        let planned = DerPlayUpstreamBridge.extensionMenuItems().compactMap { $0 as? UIAction }
+        func plannedRow(_ id: String, icon: String) -> SettingsRow? {
+            planned.first { $0.identifier.rawValue == id }.map {
+                .info($0.title.replacingOccurrences(of: "（开发中）", with: ""), "尚未开放", icon: (icon, .systemBlue))
+            }
+        }
+        var items = [row("本机 CarPlay", mode: .browser, enabled: false),
+                     row(HeadUnitOutput.browser.title, mode: .browser),
+                     row(HeadUnitOutput.airPlay.title, mode: .airPlay)]
+        if let carlink = plannedRow("derplay.iccoa.direct", icon: "DerPlayBrandCarlink") { items.append(carlink) }
+        items.append(row("百度 CarLife", mode: .carLife))
+        if let easy = plannedRow("derplay.easyconnection", icon: "DerPlayBrandEasyConnection") { items.append(easy) }
+        items.append(contentsOf: HeadUnitOutput.menuOrder.filter { $0 != .browser && $0 != .airPlay && $0 != .carLife }.map { row($0.title, mode: $0) })
+        return items
+    }
+
+    // Restore the original native settings list in the existing navigation stack.
+    private func interconnectPage() -> SettingsPageController {
+        page(CWL("互联协议")) { [unowned self] in
+            [SettingsSection(self.interconnectRows())]
         }
     }
 
@@ -2566,7 +3286,8 @@ extension ReceiverViewController {
         orientationControl.addTarget(self, action: #selector(orientationChanged), for: .valueChanged)
         resolutionControl.selectedSegmentIndex = min(ReceiverConfiguration.resolutions.count - 1, max(0,
             defaults.object(forKey: "displayResolutionIndex") as? Int ?? ReceiverConfiguration.defaultResolutionIndex))
-        aspectRatioControl.selectedSegmentIndex = ReceiverConfiguration.aspectRatios.firstIndex {
+        aspectRatioControl.replaceItems([CWL("预设比例")] + availableAspectRatios.map(\.title), preservingSelection: false)
+        aspectRatioControl.selectedSegmentIndex = availableAspectRatios.firstIndex {
             $0.title == defaults.string(forKey: "displayAspectRatio")
         }.map { $0 + 1 } ?? 0
         sizeModeControl.selectedSegmentIndex = defaults.object(forKey: "displaySizeMode") as? Int ?? 0
@@ -2585,8 +3306,6 @@ extension ReceiverViewController {
         resolutionControl.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)
         iconSizeControl.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)
         carButtonSwitch.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)
-        appearanceControl.selectedSegmentIndex = defaults.integer(forKey: "carPlayAppearance")
-        appearanceControl.addTarget(self, action: #selector(appearanceChanged), for: .valueChanged)
         passwordField.isSecureTextEntry = true
         httpsMode.selectedSegmentIndex = HTTPSConfiguration.mode.rawValue
         httpsMode.addTarget(self, action: #selector(httpsModeChanged), for: .valueChanged)
@@ -2600,10 +3319,12 @@ extension ReceiverViewController {
         passwordField.textContentType = .password
         ipField.keyboardType = .decimalPad
         let legacyPiPEnabled = defaults.object(forKey: "pictureInPictureEnabled") as? Bool ?? true
-        pictureInPictureTiming.selectedSegmentIndex = defaults.object(forKey: "pictureInPictureTiming") as? Int ?? (legacyPiPEnabled ? 1 : 0)
+        let savedPiPTiming = defaults.object(forKey: "pictureInPictureTiming") as? Int ?? (legacyPiPEnabled ? 1 : 0)
+        pictureInPictureTiming.selectedSegmentIndex = savedPiPTiming == 0 ? 1 : 0
+        defaults.set(pictureInPictureTiming.selectedSegmentIndex == 0 ? 1 : 0, forKey: "pictureInPictureTiming")
+        defaults.set(pictureInPictureTiming.selectedSegmentIndex == 0, forKey: "pictureInPictureEnabled")
         pictureInPictureTiming.addTarget(self, action: #selector(pictureInPictureTimingChanged), for: .valueChanged)
-        keepAliveSwitch.isOn = defaults.object(forKey: "backgroundKeepAlive") as? Bool ?? true
-        keepAliveSwitch.addTarget(self, action: #selector(keepAliveChanged), for: .valueChanged)
+        defaults.set(true, forKey: "backgroundKeepAlive")
         let savedOutput = defaults.object(forKey: "headUnitOutputV2") as? Int
         let previousOutput = defaults.object(forKey: "headUnitOutput") as? Int
         let legacyOutput: HeadUnitOutput = defaults.bool(forKey: "carLifeEnabled") ? .carLife : .browser
@@ -2653,27 +3374,12 @@ extension ReceiverViewController {
             field.accessibilityLabel = label
             field.addTarget(self, action: #selector(videoOutputSettingChanged), for: .editingChanged)
             field.addTarget(self, action: #selector(saveBrowserPorts), for: .editingDidEnd)
-            let toolbar = UIToolbar()
-            toolbar.items = [.flexibleSpace(), UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak field] _ in
-                field?.resignFirstResponder()
-            })]
-            toolbar.sizeToFit()
-            field.inputAccessoryView = toolbar
         }
         nameField.addTarget(self, action: #selector(receiverNameChanged), for: .editingDidEnd)
         channelField.keyboardType = .numberPad
         [nameField, ipField, ssidField, passwordField, channelField, carLifeAddressField, tailingAddressField, ninebotAddressField, ninebot43AddressField, zeehoAddressField, zeehoSEPlusAddressField, cfmotoAddressField, videoOutputPortField, secureVideoOutputPortField, httpsDomainField, httpsTokenField].forEach {
             $0.returnKeyType = .done
             $0.addTarget($0, action: #selector(UIResponder.resignFirstResponder), for: .editingDidEndOnExit)
-            if $0.inputAccessoryView == nil {
-                let field = $0
-                let toolbar = UIToolbar()
-                toolbar.items = [.flexibleSpace(), UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak field] _ in
-                    field?.resignFirstResponder()
-                })]
-                toolbar.sizeToFit()
-                field.inputAccessoryView = toolbar
-            }
         }
     }
 
@@ -2729,7 +3435,8 @@ extension ReceiverViewController {
         orientationControl.selectedSegmentIndex = defaults.bool(forKey: "portraitDisplay") ? 1 : 0
         resolutionControl.selectedSegmentIndex = min(ReceiverConfiguration.resolutions.count - 1, max(0,
             defaults.object(forKey: "displayResolutionIndex") as? Int ?? ReceiverConfiguration.defaultResolutionIndex))
-        aspectRatioControl.selectedSegmentIndex = ReceiverConfiguration.aspectRatios.firstIndex {
+        aspectRatioControl.replaceItems([CWL("预设比例")] + availableAspectRatios.map(\.title), preservingSelection: false)
+        aspectRatioControl.selectedSegmentIndex = availableAspectRatios.firstIndex {
             $0.title == defaults.string(forKey: "displayAspectRatio")
         }.map { $0 + 1 } ?? 0
         sizeModeControl.selectedSegmentIndex = defaults.object(forKey: "displaySizeMode") as? Int ?? 0
@@ -2738,9 +3445,6 @@ extension ReceiverViewController {
         let savedWidth = defaults.object(forKey: "widthPhysicalMM") as? Int ?? CarPlayInfo.defaultWidthPhysicalMM
         iconSizeControl.selectedSegmentIndex = ReceiverConfiguration.iconSizes.firstIndex { $0.widthMM == savedWidth } ?? 1
         carButtonSwitch.isOn = defaults.object(forKey: "carButton") as? Bool ?? true
-        appearanceControl.selectedSegmentIndex = defaults.integer(forKey: "carPlayAppearance")
-        let savedSound = (defaults.object(forKey: "soundOutput") as? Int).flatMap(SoundOutput.init(rawValue:)) ?? .phone
-        selectedSoundOutput = savedSound == .carWithin && UIDevice.current.userInterfaceIdiom != .pad ? .phone : savedSound
         videoOutputPortField.text = String(defaults.object(forKey: "videoOutputPort") as? Int ?? 9888)
         secureVideoOutputPortField.text = (defaults.object(forKey: "secureVideoOutputPort") as? Int).map { String($0) }
         applyAppearance()
@@ -2754,16 +3458,13 @@ extension ReceiverViewController {
         updateVideoAspect()
         reloadVisibleSettings()
     }
-    @objc private func audioSettingChanged() {
-        UserDefaults.standard.set((carLifeProfileDefaultSound ?? selectedSoundOutput).rawValue, forKey: "soundOutput")
-    }
     @objc private func receiverNameChanged() {
         guard !running, !waitingForNetwork else { return }
         UserDefaults.standard.set(nameField.text ?? "DerPlay", forKey: "receiverName")
     }
 
     /// Shows settings and, when needed, takes the user to the relevant connection settings.
-    func revealSettings(wifi: Bool = false, output: Bool = false, modes: Bool = false) {
+    func revealSettings(wifi: Bool = false, output: Bool = false, certificate: Bool = false) {
         cancelAutomaticRestart()
         view.endEditing(true)
         if let navigation = settingsNavigation {
@@ -2774,8 +3475,11 @@ extension ReceiverViewController {
             return
         }
         guard presentedViewController == nil else { return }
-        let root = modes ? interconnectPage() : output ? connectionSettingsPage() : rootSettingsPage()
-        let navigation = DerPlayGlassNavigationController(rootViewController: root)
+        if output {
+            if prepareConnectionLayer() { connectionControlLayer?.setExpanded(true) }
+            return
+        }
+        let navigation = DerPlayGlassNavigationController(rootViewController: rootSettingsPage())
         navigation.onClose = { [weak self] in self?.closeGlassSettings() }
         navigation.modalPresentationStyle = .pageSheet
         navigation.overrideUserInterfaceStyle = DerPlaySoftwareAppearance.saved().style
@@ -2790,14 +3494,52 @@ extension ReceiverViewController {
             sheet.prefersEdgeAttachedInCompactHeight = true
         }
         navigation.presentationController?.delegate = self
-        if wifi { navigation.pushViewController(wifiPage(), animated: false) }
+        if certificate { navigation.pushViewController(derPlayIdentityPage(), animated: false) }
+        else if wifi { navigation.pushViewController(wifiPage(), animated: false) }
         settingsNavigation = navigation
+        // L3 naturally occludes the persistent L2 button.
         present(navigation, animated: true)
+    }
+
+    private func prepareConnectionLayer() -> Bool {
+        guard settingsNavigation == nil, presentedViewController == nil, let layer = connectionControlLayer else { return false }
+        cancelAutomaticRestart()
+        view.endEditing(true)
+        let navigation = DerPlayGlassNavigationController(rootViewController: connectionSettingsPage())
+        navigation.reservesConnectionPlayback = true
+        navigation.overrideUserInterfaceStyle = DerPlaySoftwareAppearance.saved().style
+        navigation.onClose = { [weak self] in self?.closeGlassSettings() }
+        addChild(navigation)
+        layer.installContent(navigation.view)
+        layer.playbackSlot = { [weak navigation] in navigation?.playbackSlot }
+        navigation.onPlaybackSlotChanged = { [weak layer] in layer?.setNeedsLayout() }
+        navigation.didMove(toParent: self)
+        settingsNavigation = navigation
+        layer.panelHeight = navigation.resolvedHeight(maximum: max(1, view.bounds.height-view.safeAreaInsets.top))
+        layer.onClosed = { [weak self] in self?.finishConnectionLayer() }
+        // Keep this session's height stable while the embedded list measures or reloads.
+        // Child pages use their original scrolling behavior; no detent resizing mid-drag.
+        return true
+    }
+
+    private func finishConnectionLayer() {
+        guard let navigation = settingsNavigation, navigation.parent === self else { return }
+        navigation.willMove(toParent: nil)
+        (navigation as? DerPlayGlassNavigationController)?.onPlaybackSlotChanged = nil
+        connectionControlLayer?.playbackSlot = nil
+        connectionControlLayer?.uninstallContent(navigation.view)
+        navigation.removeFromParent()
+        settingsDismissed()
+        if opensCertificateAfterConnectionClose {
+            opensCertificateAfterConnectionClose = false
+            revealSettings(certificate: true)
+        }
     }
 
     private func closeGlassSettings() {
         guard let navigation = settingsNavigation, navigation.presentedViewController == nil else { return }
         navigation.view.endEditing(true)
+        if navigation.parent === self { connectionControlLayer?.setExpanded(false); return }
         navigation.dismiss(animated: true) { [weak self] in self?.settingsDismissed() }
     }
 
@@ -2806,92 +3548,87 @@ extension ReceiverViewController {
     }
 
     private func connectionSettingsPage() -> SettingsPageController {
-        page("连接设置") { [unowned self] in
-            var rows: [SettingsRow] = []
+        page(CWL("连接模式"), firstCardTopSpacing: 12) { [unowned self] in
+            let selector = SettingsRow.page(CWL("互联协议"), icon: ("car", .systemBlue), detail: { [unowned self] in
+                self.outputMode == .browser && !self.videoOutputSwitch.isOn
+                    ? "本机 CarPlay" : (self.outputMode == .carLife ? "百度 CarLife" : self.outputMode.title)
+            }) { [unowned self] in self.interconnectPage() }
+            var networkRows: [SettingsRow] = [selector]
             if needsNetworkDetails {
-                rows.append(.page("Wi-Fi 与网络", icon: ("wifi", .systemBlue)) { [unowned self] in self.wifiPage() })
+                networkRows.append(.page(CWL("Wi-Fi 网络"), icon: ("wifi", .systemBlue)) { [unowned self] in self.wifiPage() })
             }
-            rows += [
-                .page("CarPlay 外观", icon: ("circle.lefthalf.filled", .systemGray), detail: { [unowned self] in self.carPlayAppearanceLabel }) { [unowned self] in self.carPlayAppearancePage() },
-                .page("Dock 栏位置", icon: ("rectangle.bottomthird.inset.filled", .systemIndigo), detail: { [unowned self] in self.effectiveDock.title }) { [unowned self] in self.dockPositionPage() }
+
+            var carPlayRows: [SettingsRow] = []
+            carPlayRows += [
+                .page(CWL("Dock 栏"), icon: ("rectangle.bottomthird.inset.filled", .systemIndigo), detail: { [unowned self] in self.effectiveDock.title }) { [unowned self] in self.dockPositionPage() },
+                .control(CWL("图标大小"), icon: ("square.grid.2x2.fill", .systemPurple), iconSizeControl)
             ]
-            if !isLocalCarPlayOnly && outputMode != .airPlay {
-                rows.append(.page("声音设置", icon: ("speaker.wave.2.fill", .systemOrange), detail: { [unowned self] in self.soundOutput.title }) { [unowned self] in self.soundPage() })
-            }
-            rows.append(.control("图标大小", icon: ("square.grid.2x2.fill", .systemPurple), iconSizeControl))
             if !outputMode.usesInstrumentWiFi {
-                rows.append(.page("画面比例", icon: ("aspectratio", .systemBlue), detail: { [unowned self] in self.pictureMenuTitle }) { [unowned self] in self.pictureRatioPage() })
-                rows.append(.control(followsCarScreen ? CWL("最高分辨率") : "画面分辨率", icon: ("arrow.up.left.and.arrow.down.right", .systemBlue), resolutionControl))
+                carPlayRows.append(.control(CWL("画面比例"), icon: ("aspectratio", .systemBlue), self.pictureRatioMenu()))
+                carPlayRows.append(.control(CWL("默认分辨率"), icon: ("arrow.up.left.and.arrow.down.right", .systemBlue), resolutionControl))
+                carPlayRows.append(.info(CWL("实际输出分辨率"), icon: ("rectangle.expand.vertical", .systemGreen), detail: { [unowned self] in
+                    let previewPlan = self.planDisplay(for: self.targetScreen)
+                    return self.actualOutputResolutionLabel(for: previewPlan)
+                }).enabledWhen { [weak self] in self?.connectionSettingsEditable == true })
                 if UIDevice.current.userInterfaceIdiom == .pad, modeControl.selectedSegmentIndex != 2 {
-                    rows.append(.control(CWL("CarPlay 方向"), icon: ("rotate.right.fill", .systemGreen), orientationControl))
+                    carPlayRows.append(.control(CWL("CarPlay 方向"), icon: ("rotate.right.fill", .systemGreen), orientationControl))
                 }
                 if outputMode == .carLife || outputMode == .airPlay {
-                    rows.append(.info("视频帧率", "最高 30 FPS", icon: ("gauge.with.dots.needle.67percent", .systemOrange)))
-                    rows.append(.info("视频编码", "H.264", icon: ("film", .systemIndigo)))
+                    carPlayRows.append(.info(CWL("视频帧率"), CWL("最高 30 FPS"), icon: ("gauge.with.dots.needle.67percent", .systemOrange)))
+                    carPlayRows.append(.info(CWL("视频编码"), "H.264", icon: ("film", .systemIndigo)))
                 } else {
-                    rows.append(.control("视频帧率", icon: ("gauge.with.dots.needle.67percent", .systemOrange), frameRateControl))
-                    rows.append(.control(CWL("视频编码"), icon: ("film.fill", .systemIndigo), codecControl))
+                    carPlayRows.append(.control(CWL("视频帧率"), icon: ("gauge.with.dots.needle.67percent", .systemOrange), frameRateControl))
+                    carPlayRows.append(.control(CWL("视频编码"), icon: ("film.fill", .systemIndigo), codecControl))
                 }
             }
-            rows.append(.page("车辆设置", icon: vehicleSettingsIcon) { [unowned self] in self.vehiclePage() })
+            carPlayRows.append(.page(CWL("车辆设置"), icon: vehicleSettingsIcon) { [unowned self] in self.vehiclePage() })
             if outputMode == .browser && videoOutputSwitch.isOn {
-                rows.append(.page("浏览器设置", icon: ("globe", .systemTeal)) { [unowned self] in self.headUnitPage() })
-                rows.append(.page("HTTPS 设置", icon: ("lock.shield", .systemBlue)) { [unowned self] in self.httpsSettingsPage() })
-                rows.append(.page("实验功能", icon: ("flask", .systemOrange)) { [unowned self] in self.browserExperimentsPage() })
+                carPlayRows.append(.page(CWL("浏览器设置"), icon: ("globe", .systemCyan)) { [unowned self] in self.headUnitPage() })
+                carPlayRows.append(.page(CWL("HTTPS 设置"), icon: ("lock.shield", .systemBlue)) { [unowned self] in self.httpsSettingsPage() })
+                carPlayRows.append(.page(CWL("实验功能"), icon: ("flask", .systemOrange)) { [unowned self] in self.browserExperimentsPage() })
             } else if outputMode == .carLife {
-                rows.append(.field(CWL("车机 IP 地址"), carLifeAddressField, placeholder: CWL("留空自动发现"), icon: ("network", .systemBlue)))
+                carPlayRows.append(.field(CWL("车机 IP 地址"), carLifeAddressField, placeholder: CWL("留空自动发现"), icon: ("network", .systemBlue)))
             } else if outputMode == .airPlay {
-                rows.append(.page("AirPlay 设置", icon: ("airplay.video", .systemBlue)) { [unowned self] in self.headUnitPage() })
+                carPlayRows.append(.page(CWL("AirPlay 设置"), icon: ("airplay.video", .systemBlue)) { [unowned self] in self.headUnitPage() })
             } else if outputMode.usesInstrumentWiFi {
-                rows.append(.page("仪表设置", icon: ("speedometer", .systemBlue)) { [unowned self] in self.headUnitPage() })
-                rows.append(.page("电池与 BMS", icon: ("battery.100", .systemGreen)) { [unowned self] in self.antBMS.settingsPage() })
+                carPlayRows.append(.page(CWL("仪表设置"), icon: ("speedometer", .systemBlue)) { [unowned self] in self.headUnitPage() })
+                carPlayRows.append(.page("电池与 BMS", icon: ("battery.100", .systemGreen)) { [unowned self] in self.antBMS.settingsPage() })
             }
-            // Interactive controls remain reachable; live text is projected onto the home card.
-            if modeControl.selectedSegmentIndex == 2 { rows.append(.view(receiverPicker)) }
-            if outputMode == .airPlay && !isLocalCarPlayOnly {
-                rows.append(.view(airPlayRetryButton))
-            }
-            return [SettingsSection(footer: editingLockedFooter, rows)]
+            if modeControl.selectedSegmentIndex == 2 { carPlayRows.append(.view(receiverPicker)) }
+            if outputMode == .airPlay && !isLocalCarPlayOnly { carPlayRows.append(.view(airPlayRetryButton)) }
+            return [SettingsSection(networkRows), SettingsSection(CWL("CarPlay 设置"), footer: editingLockedFooter, carPlayRows)] + iPadConnectionSections()
         }
     }
 
-    private func pictureRatioPage() -> SettingsPageController {
-        page("画面比例") { [unowned self] in
-            let ratios = ReceiverConfiguration.aspectRatios.map(\.title)
-            var options: [(Int, String)] = [(0, "自动适配")]
-            options += ratios.enumerated().map { ($0.offset + 2, $0.element) }
-            // Native 480P is 5:3 (3:5 in legacy iPad portrait). Keep it selectable without a generic preset row.
-            if !ratios.contains(nativePresetRatioTitle) { options.insert((1, nativePresetRatioTitle), at: 1) }
-            let selected = pictureMenuIndex == 1 ? (ratios.firstIndex(of: nativePresetRatioTitle).map { $0 + 2 } ?? 1) : pictureMenuIndex
-            let rows = options.map { index, title -> SettingsRow in
-                var row = SettingsRow.action(title) { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork else { return }
-                    if self.outputMode == .carLife, self.carLifeProfileDefaultIndex != nil,
-                       let geometry = self.lastCarLifeGeometry {
-                        let store = DeviceProfilePolicy()
-                        if let previous = store.lookup(scope: self.currentPreferenceScope, evidence: geometry),
-                           let next = previous.replacingPicture(index: index, allowedRatios: ReceiverConfiguration.aspectRatios.map(\.title)),
-                           store.save(next, scope: self.currentPreferenceScope, evidence: geometry) {
-                            self.reloadVisibleSettings()
-                            self.log("CarLife：已保存当前屏幕画面比例，下次匹配时应用。")
-                        }
-                        return
-                    }
-                    self.sizeModeControl.selectedSegmentIndex = index == 0 ? 0 : 1
-                    if index > 0 { self.aspectRatioControl.selectedSegmentIndex = index - 1 }
-                    self.displaySettingChanged()
+    private func pictureRatioMenu() -> ChoiceMenu {
+        let ratios = availableAspectRatios.map(\.title)
+        var options: [(Int, String)] = [(0, CWL("自动适配"))]
+        options += ratios.enumerated().map { ($0.offset + 2, $0.element) }
+        if !ratios.contains(nativePresetRatioTitle) { options.insert((1, nativePresetRatioTitle), at: 1) }
+        let selected = pictureMenuIndex == 1 ? (ratios.firstIndex(of: nativePresetRatioTitle).map { $0 + 2 } ?? 1) : pictureMenuIndex
+        let menu = ChoiceMenu(items: options.map { $0.1 })
+        menu.selectedSegmentIndex = options.firstIndex { $0.0 == selected } ?? 0
+        menu.isEnabled = !running && !waitingForNetwork
+        menu.addAction(UIAction { [weak self, weak menu] _ in
+            guard let self, let menu, options.indices.contains(menu.selectedSegmentIndex) else { return }
+            let index = options[menu.selectedSegmentIndex].0
+            guard !self.running, !self.waitingForNetwork else { return }
+            if self.outputMode == .carLife, self.carLifeProfileDefaultIndex != nil,
+               let geometry = self.lastCarLifeGeometry {
+                let store = DeviceProfilePolicy()
+                if let previous = store.lookup(scope: self.currentPreferenceScope, evidence: geometry),
+                   let next = previous.replacingPicture(index: index, allowedRatios: self.availableAspectRatios.map(\.title)),
+                   store.save(next, scope: self.currentPreferenceScope, evidence: geometry) {
+                    self.reloadVisibleSettings()
+                    self.log("CarLife：已保存当前屏幕画面比例，下次匹配时应用。")
                 }
-                row.checked = { selected == index }
-                if running || waitingForNetwork {
-                    let current = matchedCarLifePictureIndex != nil ? "已保存偏好" : "当前使用"
-                    return .info(title, selected == index ? current : "停止后可选")
-                }
-                return row
+                return
             }
-            return [SettingsSection(footer: editingLockedFooter ?? (matchedCarLifePictureIndex != nil
-                ? "当前屏幕专属偏好；下次匹配时应用。若固定比例超出分辨率档位限制，将使用自动比例。"
-                : "自动适配遵循现有协议及分辨率限制；选择具体比例时使用固定输出。"), rows)]
-        }
+            self.sizeModeControl.selectedSegmentIndex = index == 0 ? 0 : 1
+            if index > 0 { self.aspectRatioControl.selectedSegmentIndex = index - 1 }
+            self.displaySettingChanged()
+        }, for: .valueChanged)
+        return menu
     }
 
     fileprivate func settingsDismissed() {
@@ -2904,10 +3641,14 @@ extension ReceiverViewController {
         updatePictureInPicturePolicy()
     }
 
+    private var connectionSettingsEditable: Bool { !running && !waitingForNetwork }
+
     private var editingLockedFooter: String? { (running || waitingForNetwork) ? CWL("CarPlay 运行中，停止后才能修改这些设置。") : nil }
     private func onOff(_ toggle: UISwitch) -> () -> String? { { toggle.isOn ? CWL("开") : CWL("关") } }
-    private func page(_ title: String, _ build: @escaping () -> [SettingsSection]) -> SettingsPageController {
-        SettingsPageController(title: title, build: build)
+    private func page(_ title: String, subtitle: String? = nil, firstCardTopSpacing: CGFloat? = nil, _ build: @escaping () -> [SettingsSection]) -> SettingsPageController {
+        let controller = SettingsPageController(title: title, subtitle: subtitle, firstCardTopSpacing: firstCardTopSpacing, build: build)
+        controller.runtimeEditingLocked = { [weak self] in self?.connectionSettingsEditable == false }
+        return controller
     }
     private func alert(_ title: String, _ message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
@@ -2917,12 +3658,9 @@ extension ReceiverViewController {
 
     private func aboutLinks() -> [SettingsRow] {
         [
-            .page(CWL("使用说明"), icon: ("book.fill", .systemOrange)) { [unowned self] in self.usagePage() },
-            .action(CWL("版本记录"), icon: ("clock.arrow.circlepath", .systemPurple)) { [unowned self] in self.showVersionHistory() },
             .action(CWL("检查更新"), icon: ("arrow.clockwise.circle.fill", .systemBlue), detail: { [unowned self] in
                 self.checkingForUpdates ? CWL("检查中…") : nil
-            }) { [unowned self] in self.checkForUpdates() },
-            .externalLink("DerPlay GitHub Releases", icon: ("link", .systemGray)) { UIApplication.shared.open(Self.releasesURL) }
+            }) { [unowned self] in self.checkForUpdates() }
         ]
     }
 
@@ -2933,21 +3671,22 @@ extension ReceiverViewController {
                     .guide(CWL("让 iPhone 加入 Wi-Fi"), icon: ("wifi", .systemBlue),
                            CWL("路由器、车机 Wi-Fi 或另一台手机的热点都可以。有网、没网都能投屏。运行 DerPlay 的 iPhone 需要实际加入 Wi-Fi，自己开热点不能代替这一步。")),
                     .guide(CWL("确认当前网络"), icon: ("list.bullet", .systemBlue),
-                           CWL("回到 DerPlay，在「连接设置 → Wi-Fi 与网络」读取或填写当前网络，返回时保存。"))
+                           CWL("回到 DerPlay，在「连接模式 → Wi-Fi 网络」读取或填写当前网络，返回时保存。"))
                 ]),
                 SettingsSection(CWL("2. 选一种输出"), [
                     .guide(CWL("浏览器"), icon: ("globe", .systemTeal),
-                           CWL("车机连同一个 Wi-Fi。在「互联方式」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。")),
+                           CWL("车机连同一个 Wi-Fi。在「连接模式」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。")),
                     .guide(CWL("车机或仪表"), icon: ("car.fill", .systemIndigo),
-                           CWL("使用仪表时先加入仪表 Wi-Fi，再按连接设置中的仪表说明操作。CarLife 先打开车机上的 CarLife；AirPlay 在连接设置中选择接收设备。"))
+                           CWL("使用仪表时先加入仪表 Wi-Fi，再按连接模式中的仪表说明操作。CarLife 先打开车机上的 CarLife；AirPlay 在连接模式中选择接收设备。"))
                 ]),
                 SettingsSection(CWL("3. 常见问题"), [
+                    .guide(CWL("画中画"), icon: ("pip.fill", .systemPurple), CWL("锁屏前，请在 iPhone「设置 › 通用 › CarPlay › 对应的车辆名称」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。")),
                     .guide(CWL("卡在正在连接"), icon: ("arrow.clockwise", .systemOrange),
                            CWL("核对 iPhone 连的 Wi-Fi 和预设是否同名。仍连不上，关开一次 Wi-Fi，回到 App 重新启动。")),
                     .guide(CWL("网页打不开或没有画面"), icon: ("exclamationmark.circle", .systemOrange),
                            CWL("先核对两台设备的 Wi-Fi 和首页地址。能打开但没画面时，先试 HTTP，再把画面设为 H.264、720P、30 帧。")),
                     .guide(CWL("仪表没有画面"), icon: ("display", .systemPurple),
-                           CWL("确认选对仪表型号、仪表已打开投屏，并在「连接设置 → 仪表设置」核对仪表 IP。先结束其他投屏。"))
+                           CWL("确认选对仪表型号、仪表已打开投屏，并在「连接模式 → 仪表设置」核对仪表 IP。先结束其他投屏。"))
                 ])
             ]
         }
@@ -2969,7 +3708,7 @@ extension ReceiverViewController {
 
     private var canAutomaticallyCheckUpdates: Bool {
         UIApplication.shared.applicationState == .active && !running && !waitingForNetwork
-            && viewIfLoaded?.window != nil && presentedViewController == nil
+            && viewIfLoaded?.window != nil && presentedViewController == nil && settingsNavigation == nil
     }
 
     private func checkForUpdates(manual: Bool = true) {
@@ -2998,7 +3737,12 @@ extension ReceiverViewController {
                           initialNavigation.topViewController === initialPage, initialNavigation.presentedViewController == nil, initialNavigation.viewIfLoaded?.window != nil,
                           !self.running, !self.waitingForNetwork else { return }
                     AppUpdatePolicy().succeeded()
-                    self.showVersionDetails(release, automatic: false)
+                    let installedBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0
+                    if let build = release.update?.build, build <= installedBuild {
+                        self.alert(CWL("暂无新版本"), CWL("当前暂无可用的新版本。"))
+                    } else {
+                        self.showVersionDetails(release, automatic: false)
+                    }
                 } else {
                     guard self.canAutomaticallyCheckUpdates else { return }
                     AppUpdatePolicy().succeeded()
@@ -3008,10 +3752,16 @@ extension ReceiverViewController {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                AppUpdatePolicy().failed()
+                let noRelease: Bool
+                if let releaseError = error as? ReleaseError, case .missing = releaseError { noRelease = true } else { noRelease = false }
+                if noRelease { AppUpdatePolicy().succeeded() } else { AppUpdatePolicy().failed() }
                 if manual, let initialNavigation, self.settingsNavigation === initialNavigation,
                    initialNavigation.topViewController === initialPage, initialNavigation.presentedViewController == nil, initialNavigation.viewIfLoaded?.window != nil {
-                    self.alert(CWL("检查更新失败"), error.localizedDescription)
+                    if noRelease {
+                        self.alert(CWL("暂无新版本"), CWL("当前暂无可用的新版本。"))
+                    } else {
+                        self.alert(CWL("检查更新失败"), error.localizedDescription)
+                    }
                 }
             }
         }
@@ -3070,76 +3820,50 @@ extension ReceiverViewController {
     // MARK: Root
 
     fileprivate func rootSettingsPage() -> SettingsPageController {
-        page("软件设置") { [unowned self] in
+        page(CWL("通用设置")) { [unowned self] in
             [SettingsSection([
-                .page("软件外观", icon: ("sun.max.fill", .systemBlue), detail: { DerPlaySoftwareAppearance.saved().title }) { [unowned self] in self.softwareAppearancePage() },
-                .page("后台与画中画", icon: ("pip.fill", .systemPurple)) { [unowned self] in self.backgroundSettingsPage() },
-                .page("MFi 身份管理", icon: ("lock.shield", .systemGreen), detail: { [unowned self] in self.identity == nil ? "未配置" : "已载入" }) { [unowned self] in self.derPlayIdentityPage() },
-                .page(CWL("诊断与实验"), icon: ("stethoscope", .systemRed)) { [unowned self] in self.diagnosticsPage() },
+                .page(CWL("使用说明"), icon: ("book.fill", .systemOrange)) { [unowned self] in self.usagePage() },
+                .control(CWL("夜间模式"), icon: ("moon.stars.fill", .systemBlue), self.softwareAppearanceMenu()),
+                .control(CWL("画中画"), icon: ("pip.fill", .systemPurple), pictureInPictureTiming),
+                .control(CWL("触感反馈"), icon: ("waveform", .systemPurple), self.hapticFeedbackSwitch()),
+                .page(CWL("MFi 证书管理"), icon: ("lock.shield", .systemGreen), detail: { [unowned self] in self.identity == nil ? CWL("未配置") : CWL("已载入") }) { [unowned self] in self.derPlayIdentityPage() },
                 .page(CWL("关于"), icon: ("info.circle.fill", .systemGray)) { [unowned self] in self.aboutPage() }
             ])]
         }
     }
 
-    private func backgroundSettingsPage() -> SettingsPageController {
-        page(CWL("后台与画中画")) { [unowned self] in
-            [SettingsSection(footer: CWL("锁屏前，请在 iPhone「设置 › 通用 › CarPlay › 对应的车辆名称」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"), [
-                .control(CWL("锁屏与后台继续运行"), icon: ("lock.fill", .systemPurple), keepAliveSwitch),
-                .control(CWL("画中画开启时机"), icon: ("pip.fill", .systemIndigo), pictureInPictureTiming)
-            ])]
-        }
+    private func hapticFeedbackSwitch() -> UISwitch {
+        let toggle = UISwitch()
+        toggle.isOn = DerPlayHaptics.isEnabled
+        toggle.addAction(UIAction { [weak toggle] _ in
+            guard let toggle else { return }
+            DerPlayHaptics.isEnabled = toggle.isOn
+        }, for: .valueChanged)
+        return toggle
     }
 
-    private func softwareAppearancePage() -> SettingsPageController {
-        page("软件外观") { [unowned self] in
-            let rows = DerPlaySoftwareAppearance.allCases.map { choice -> SettingsRow in
-                var row = SettingsRow.action(choice.title, icon: (choice.symbol, choice == .light ? .systemOrange : choice == .dark ? .systemPurple : .systemGray)) { [weak self] in
-                    UserDefaults.standard.set(choice.rawValue, forKey: DerPlaySoftwareAppearance.defaultsKey)
-                    self?.applySoftwareAppearance()
-                }
-                row.checked = { DerPlaySoftwareAppearance.saved() == choice }
-                return row
-            }
-            return [SettingsSection("软件外观", footer: "仅改变 DerPlay 界面，不影响 CarPlay 外观设置。", rows)]
-        }
+    private func softwareAppearanceMenu() -> ChoiceMenu {
+        // Night mode is now a simple on/off preference. Keep "开启" first in the menu.
+        let choices: [DerPlaySoftwareAppearance] = [.dark, .light]
+        let menu = ChoiceMenu(items: [CWL("开启"), CWL("关闭")])
+        menu.selectedSegmentIndex = DerPlaySoftwareAppearance.saved() == .dark ? 0 : 1
+        menu.addAction(UIAction { [weak self, weak menu] _ in
+            guard let menu, choices.indices.contains(menu.selectedSegmentIndex) else { return }
+            UserDefaults.standard.set(choices[menu.selectedSegmentIndex].rawValue, forKey: DerPlaySoftwareAppearance.defaultsKey)
+            self?.applySoftwareAppearance()
+        }, for: .valueChanged)
+        return menu
     }
 
     // MARK: CarPlay 画面
 
-    private var carPlayAppearanceLabel: String {
-        ["自动", "日间", "夜间"][min(2, max(0, appearanceControl.selectedSegmentIndex))]
-    }
-
-    private func carPlayAppearancePage() -> SettingsPageController {
-        page("CarPlay 外观") { [unowned self] in
-            let index = appearanceControl.selectedSegmentIndex
-            let night = index == 2 || (index == 0 && systemAppearanceIsDark)
-            let preview = UIHostingConfiguration { DerPlayAppearancePreview(night: night, dock: effectiveDock, legacyRight: driveControl.selectedSegmentIndex == 1) }
-                .margins(.all, 0).makeContentView()
-            preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 10.0 / 16.0).isActive = true
-            let titles = ["自动", "日间", "夜间"]
-            let symbols = ["circle.lefthalf.filled", "sun.max", "moon.stars"]
-            let options = titles.enumerated().map { i, title -> SettingsRow in
-                var row = SettingsRow.action(title, icon: (symbols[i], .systemGray)) { [weak self] in
-                    guard let self else { return }
-                    self.appearanceControl.selectedSegmentIndex = i
-                    self.appearanceControl.sendActions(for: .valueChanged)
-                }
-                row.checked = { index == i }
-                return row
-            }
-            return [SettingsSection("外观示意 · 非实际输出", [.view(preview)]),
-                    SettingsSection("显示外观", footer: "自动沿用当前系统日夜状态。预览为示意图，实际画面由 CarPlay 生成。", options)]
-        }
-    }
-
     private func dockPositionPage() -> SettingsPageController {
-        page("Dock 栏位置") { [unowned self] in
+        page(CWL("Dock 栏")) { [unowned self] in
             let selection = effectiveDock
-            let night = appearanceControl.selectedSegmentIndex == 2 || (appearanceControl.selectedSegmentIndex == 0 && systemAppearanceIsDark)
+            let night = systemAppearanceIsDark
             let preview = UIHostingConfiguration { DerPlayAppearancePreview(night: night, dock: selection, legacyRight: driveControl.selectedSegmentIndex == 1) }
                 .margins(.all, 0).makeContentView()
-            preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 10.0 / 16.0).isActive = true
+            preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 0.36).isActive = true
             let symbols = ["circle.lefthalf.filled", "sidebar.left", "sidebar.right", "rectangle.bottomthird.inset.filled"]
             let rows = DerPlayDockPosition.allCases.enumerated().map { i, choice -> SettingsRow in
                 var row = SettingsRow.action(choice.title, icon: (symbols[i], .systemGray)) { [weak self] in
@@ -3153,18 +3877,17 @@ extension ReceiverViewController {
                     self.reloadVisibleSettings()
                 }
                 row.checked = { selection == choice }
-                return row
+                return row.enabledWhen { [weak self] in self?.connectionSettingsEditable == true }
             }
             return [SettingsSection("布局示意 · 非实际输出", [.view(preview)]),
-                    SettingsSection("Dock 栏位置", footer: "停止连接后修改，下次启动生效。实际布局由 CarPlay 决定；若不兼容，请恢复自动。左右选项也可能影响驾驶侧布局。", rows)]
+                    SettingsSection(CWL("Dock 栏"), footer: "停止连接后修改，下次启动生效。实际布局由 CarPlay 决定；若不兼容，请恢复自动。左右选项也可能影响驾驶侧布局。", rows)]
         }
     }
 
     fileprivate func displayPage() -> SettingsPageController {
         page("画面设置") { [unowned self] in
-            let common = SettingsSection("CarPlay 显示", [
-                .page("CarPlay 外观", icon: ("circle.lefthalf.filled", .systemGray), detail: { [unowned self] in self.carPlayAppearanceLabel }) { [unowned self] in self.carPlayAppearancePage() },
-                .page("Dock 栏位置", icon: ("rectangle.bottomthird.inset.filled", .systemIndigo), detail: { [unowned self] in self.effectiveDock.title }) { [unowned self] in self.dockPositionPage() }
+            let common = SettingsSection(CWL("CarPlay 设置"), [
+                .page(CWL("Dock 栏"), icon: ("rectangle.bottomthird.inset.filled", .systemIndigo), detail: { [unowned self] in self.effectiveDock.title }) { [unowned self] in self.dockPositionPage() }
             ])
             let existingSections: () -> [SettingsSection] = { [unowned self] in
             if let cfmoto = cfmotoProfile {
@@ -3214,18 +3937,20 @@ extension ReceiverViewController {
                     return self.targetScreen?.title ?? CWL("尚未记录")
                 }) { [unowned self] in self.screensPage() })
             }
-            size.append(.control(followsCarScreen ? CWL("最高分辨率") : CWL("分辨率"), icon: ("arrow.up.left.and.arrow.down.right", .systemBlue), resolutionControl))
+            size.append(.control(CWL("默认分辨率"), icon: ("arrow.up.left.and.arrow.down.right", .systemBlue), resolutionControl))
             if !followsCarScreen {
                 size.append(.control(CWL("画面比例"), icon: ("aspectratio", .systemBlue), aspectRatioControl))
             }
+            let previewPlan = planDisplay(for: targetScreen)
+            size.append(.info(CWL("实际输出分辨率"), actualOutputResolutionLabel(for: previewPlan), icon: ("rectangle.expand.vertical", .systemGreen)).enabledWhen { [weak self] in self?.connectionSettingsEditable == true })
             if UIDevice.current.userInterfaceIdiom == .pad, modeControl.selectedSegmentIndex != 2 {
                 size.append(.control(CWL("CarPlay 方向"), icon: ("rotate.right.fill", .systemGreen), orientationControl))
             }
             let plan = planDisplay(for: targetScreen)
             return [
                 SettingsSection(footer: (followsCarScreen
-                    ? (outputMode == .carLife ? "CarLife 在首次出画前按接收端上报尺寸自动协商，不为适配自动重连。实际显示区域未知时可能有误差；可切换固定尺寸并选择画面比例。" : CWL("启动时先用勾选的屏幕或最近一次设置。第一个网页接管后，窗口尺寸变化会在 DerPlay 回到前台时应用。更大的窗口按最高分辨率等比缩小。"))
-                    : CWL("选择比例后按分辨率档位计算尺寸，短边至少 320 像素，实际值见下方。2K/4K 会增加发热和带宽。"))
+                    ? (outputMode == .carLife ? "CarLife 在首次出画前按接收端上报尺寸自动协商，不为适配自动重连。实际显示区域未知时可能有误差；可切换固定尺寸并选择画面比例。" : CWL("清晰度档位限定输出宽高上限。启动时使用已识别的接收屏幕规格；网页上报尺寸后记录设备原生比例，供后续选择和适配。"))
+                    : CWL("清晰度档位限定输出宽高上限；画面比例决定画布形状，短边至少 320 像素，实际输出尺寸见下方。极端比例会在协议能力内自动提高清晰度，无法保持比例时不启动。2K/4K 会增加发热和带宽。"))
                     + (!followsCarScreen && outputMode != .browser ? CWL("\n此输出受 1920×1080 限制，较长的竖屏比例以实际尺寸为准。") : "")
                     + (outputMode == .carLife && followsCarScreen && targetScreen == nil
                        ? "\n下次启动：等待接收端协商分辨率 · H.264"
@@ -3274,7 +3999,10 @@ extension ReceiverViewController {
                 return [SettingsSection(footer: CWL("启动 CarPlay 后，在车机浏览器打开接收页，屏幕会自动记录在这里。"), [])]
             }
             if running || waitingForNetwork {
-                return [SettingsSection(footer: editingLockedFooter, screens.map { .info($0.title, $0.subtitle) })]
+                return [SettingsSection(footer: editingLockedFooter, screens.map { screen in
+                    SettingsRow.action(screen.title, detail: { screen.subtitle }) {}
+                        .enabledWhen { [weak self] in self?.connectionSettingsEditable == true }
+                })]
             }
             var rows: [SettingsRow] = screens.map { screen in
                 var row = SettingsRow.action(screen.title) { [unowned self] in
@@ -3321,51 +4049,13 @@ extension ReceiverViewController {
                     CarScreenStore.setIconWidth(choice.width, for: key)
                 }
                 row.checked = { screen.iconWidthMM == choice.width }
-                return row
+                return row.enabledWhen { [weak self] in self?.connectionSettingsEditable == true }
             }
             return [SettingsSection(footer: CWL("设置会在下次使用这块屏幕时应用。"), rows)]
         }
     }
 
     // MARK: 声音 / 车辆
-
-    fileprivate func soundPage() -> SettingsPageController {
-        page(CWL("声音")) { [unowned self] in
-            guard outputMode == .browser else {
-                let phone = SoundOutput.phone
-                return [SettingsSection(footer: phone.explanation + " 停止 CarPlay 后普通音乐仍无声时，先在这里或控制中心选中耳机，并检查媒体音量。", [
-                    .info(CWL("声音输出"), CWL("由 iPhone 输出")),
-                    .info("当前声音路由", audioRouteDescription),
-                    .control("选择耳机或扬声器", icon: ("headphones", .systemOrange), audioRoutePicker)
-                ])]
-            }
-            let choices = SoundOutput.allCases.filter { output in
-                switch output {
-                case .carWithin: return receivesAudioFromAnotherDevice
-                case .phone: return true
-                case .browser: return videoOutputSwitch.isOn
-                }
-            }
-            let rows = choices.map { output in
-                let icons = ["speaker.wave.2.fill", "iphone", "wifi"]
-                var row = SettingsRow.action(output.title, icon: (icons[output.rawValue], .systemOrange)) { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork else {
-                        self.alert(CWL("请先停止 CarPlay"), CWL("停止后即可修改声音输出。"))
-                        return
-                    }
-                    self.selectedSoundOutput = output
-                    self.audioSettingChanged()
-                }
-                row.subtitle = { output.explanation }
-                row.checked = { [unowned self] in self.soundOutput == output }
-                return row
-            }
-            let footer = videoOutputSwitch.isOn
-                ? CWL("更改在下次启动 CarPlay 时生效。使用 Wi-Fi 伴音时，通话和 Siri 留在 iPhone。")
-                : CWL("打开局域网接收页后可使用 Wi-Fi 伴音。更改在下次启动 CarPlay 时生效。")
-            return [SettingsSection(footer: footer, rows)]
-        }
-    }
 
     fileprivate func vehiclePage() -> SettingsPageController {
         page(CWL("车辆")) { [unowned self] in
@@ -3380,8 +4070,8 @@ extension ReceiverViewController {
                 let thumbnail = UIImageView(image: image)
                 thumbnail.layer.cornerRadius = 8
                 thumbnail.clipsToBounds = true
-                thumbnail.widthAnchor.constraint(equalToConstant: 36).isActive = true
-                thumbnail.heightAnchor.constraint(equalToConstant: 36).isActive = true
+                thumbnail.widthAnchor.constraint(equalToConstant: 32).isActive = true
+                thumbnail.heightAnchor.constraint(equalToConstant: 32).isActive = true
                 let preview = UILabel()
                 preview.text = customVehicleIcon == nil ? CWL("当前图标 · 默认") : CWL("当前图标 · 自选图片")
                 preview.font = .preferredFont(forTextStyle: .body)
@@ -3441,26 +4131,53 @@ extension ReceiverViewController {
 
     // MARK: Wi-Fi
 
-    fileprivate func wifiPage() -> SettingsPageController { wifiForm(adding: false) }
+    // Explicitly entering Add Wi-Fi permits a best-effort read even in an unsigned
+    // build where automatic network switching is disabled. iOS still enforces entitlement.
+    private func detectDraftWiFiName(completion: @escaping (String?) -> Void) {
+        guard !running, !waitingForNetwork, !wifiAddSavePending else { completion(nil); return }
+        let authorization = locationManager.authorizationStatus
+        if authorization == .notDetermined {
+            wifiDraftPermissionCompletion = { [weak self] in self?.detectDraftWiFiName(completion: completion) }
+            locationManager.requestWhenInUseAuthorization()
+            return
+        }
+        guard authorization == .authorizedWhenInUse || authorization == .authorizedAlways else {
+            completion(nil); return
+        }
+        NEHotspotNetwork.fetchCurrent { network in
+            let ssid = network?.ssid
+            DispatchQueue.main.async { completion(ssid) }
+        }
+    }
 
-    private func wifiForm(adding: Bool) -> SettingsPageController {
+    private func readDraftWiFiPassword(_ ssid: String, completion: @escaping (String?) -> Void) {
+        wifiAddSaveQueue.async {
+            let saved = try? WiFiCredentials.password(for: ssid)
+            DispatchQueue.main.async { completion(saved) }
+        }
+    }
+
+    fileprivate func wifiPage() -> SettingsPageController { wifiForm() }
+
+    private func wifiForm() -> SettingsPageController {
         let editable = !running && !waitingForNetwork
         let form = UUID()
-        let previous = (ssidField.text, passwordField.text, channelField.text,
-                        openNetworkSwitch.isOn, passwordLoadedForSSID, passwordStatus.text)
-        let isAdding = adding && editable
-        if isAdding {
-            ssidField.text = ""; passwordField.text = ""; channelField.text = "36"
-            openNetworkSwitch.isOn = false; passwordLoadedForSSID = nil; passwordStatus.text = nil
-        }
+        wifiDeferredExitReadID = nil
         activeWiFiForm = form
-        let title = isAdding ? CWL("添加 Wi-Fi") : CWL("Wi-Fi 与网络")
-        let controller = page(title) { [unowned self] in
+        let controller = page(CWL("Wi-Fi 网络")) { [unowned self] in
+            if self.wifiAddSavePending {
+                return [SettingsSection([.info(CWL("正在保存 Wi-Fi"), CWL("请稍候"))])]
+            }
             var current: [SettingsRow] = []
             if canDetectWiFiName && editable {
                 current.append(.action(CWL("读取当前 Wi-Fi"), icon: ("antenna.radiowaves.left.and.right", .systemBlue)) { [unowned self] in
                     guard !self.running, !self.waitingForNetwork else { return }
                     self.detectNetwork()
+                })
+            }
+            if editable {
+                current.append(.action(CWL("连接此 Wi-Fi"), icon: ("wifi", .systemBlue)) { [unowned self] in
+                    self.joinConfiguredWiFi()
                 })
             }
             var fields: [SettingsRow] = []
@@ -3473,35 +4190,205 @@ extension ReceiverViewController {
                 .control(CWL("开放网络（无密码）"), openNetworkSwitch),
                 .field(CWL("兼容信道"), channelField, placeholder: "36")
             ]
-            var sections: [SettingsSection] = isAdding ? [] : self.wifiPresetSections(inline: true)
+            var sections: [SettingsSection] = self.wifiPresetSections(inline: true)
             if !current.isEmpty { sections.append(SettingsSection(current)) }
             sections.append(SettingsSection(footer: editingLockedFooter ?? CWL("返回自动保存。同名网络会更新原预设，兼容信道通常保持 36。"), fields))
             if editable, passwordStatus.text?.isEmpty == false { sections.append(SettingsSection([.note(passwordStatus)])) }
             return sections
         }
-        controller.onAppear = { [weak self] in self?.activeWiFiForm = form }
-        controller.onLeave = { [weak self] in
-            guard let self, self.activeWiFiForm == form else { return }
+        controller.onAppear = { [weak self] in
+            self?.wifiDeferredExitReadID = nil
+            self?.activeWiFiForm = form
+        }
+        controller.onLeave = { [weak self, weak controller] in
+            guard let self, let controller, self.activeWiFiForm == form else { return }
+            // A pushed child or temporary presentation is not an exit from this form.
+            if let navigation = controller.navigationController,
+               navigation.viewControllers.contains(where: { $0 === controller }),
+               !navigation.isBeingDismissed { return }
             self.activeWiFiForm = nil
             self.awaitingNetworkPermission = false
-            guard editable, !self.running, !self.waitingForNetwork else { return }
-            let hasName = !(self.ssidField.text ?? "").isEmpty
-            if hasName, self.saveCurrentWiFiPreset() {
-                self.refreshNetworkSummary()
-                if WiFiCredentials.isTemporary(for: self.ssidField.text ?? "") {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                        self?.alert(CWL("Wi-Fi 密码仅本次使用"), WiFiCredentials.temporaryNotice)
-                    }
+            guard editable, !self.running, !self.waitingForNetwork, !self.wifiAddSavePending else { return }
+            if let readID = self.wifiPasswordReadID {
+                self.wifiDeferredExitReadID = readID
+                return
+            }
+            let ssid = self.ssidField.text ?? ""
+            let secret = self.passwordField.text ?? ""
+            let channelText = self.channelField.text ?? ""
+            let isOpen = self.openNetworkSwitch.isOn
+            guard !ssid.isEmpty else { return }
+            let validatedChannel = channelText.isEmpty ? UInt8(36) : UInt8(channelText)
+            guard ssid.utf8.count <= 32, let validatedChannel, (1...196).contains(validatedChannel),
+                  isOpen || (8...63).contains(secret.utf8.count) else {
+                self.passwordStatus.text = CWL("请输入有效的 Wi-Fi 名称、密码和兼容信道。")
+                DispatchQueue.main.async { [weak self] in
+                    self?.alert(CWL("Wi-Fi 未保存"), CWL("请输入有效的 Wi-Fi 名称、密码和兼容信道。"))
                 }
                 return
             }
-            let reason = hasName ? self.passwordStatus.text : nil
-            (self.ssidField.text, self.passwordField.text, self.channelField.text,
-             self.openNetworkSwitch.isOn, self.passwordLoadedForSSID, self.passwordStatus.text) = previous
-            self.refreshNetworkSummary()
-            if let reason {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                    self?.alert(CWL("Wi-Fi 未保存"), reason)
+            // Share the add transaction's pending guard and serial credential queue.
+            self.wifiAddSavePending = true
+            let savedPassword = isOpen ? "" : secret
+            DispatchQueue.main.async { [weak self] in self?.reloadVisibleSettings() }
+            self.wifiAddSaveQueue.async { [weak self] in
+                let result: Result<Bool, Error> = Result {
+                    try WiFiCredentials.save(savedPassword, for: ssid)
+                    return WiFiCredentials.isTemporary(for: ssid)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.wifiAddSavePending = false
+                    switch result {
+                    case .success(let temporary):
+                        WiFiPresetStore.upsert(ssid: ssid, channel: validatedChannel, isOpen: isOpen)
+                        self.passwordLoadedForSSID = ssid
+                        self.passwordStatus.text = temporary ? WiFiCredentials.temporaryNotice : CWL("已保存 Wi-Fi 预设“{1}”", [ssid])
+                    case .failure(let error):
+                        // Keep the edited draft available for retry; persisted metadata is untouched.
+                        self.passwordStatus.text = CWL("保存 Wi-Fi 预设失败：{1}", [error.localizedDescription])
+                    }
+                    self.refreshNetworkSummary()
+                    self.refreshWiFiPresetMenu()
+                    switch result {
+                    case .success(let temporary) where temporary:
+                        self.alert(CWL("Wi-Fi 密码仅本次使用"), WiFiCredentials.temporaryNotice)
+                    case .failure(let error):
+                        self.alert(CWL("Wi-Fi 未保存"), error.localizedDescription)
+                    default: break
+                    }
+                }
+            }
+        }
+        return controller
+    }
+
+    // The add page owns its controls; never move live controls out of the parent table.
+    private func addWiFiPage() -> SettingsPageController {
+        let name = UITextField(), password = UITextField(), channel = UITextField()
+        let open = UISwitch()
+        channel.text = "36"; channel.keyboardType = .numberPad
+        password.isSecureTextEntry = true; password.textContentType = .password
+        for field in [name, password, channel] {
+            field.returnKeyType = .done
+            field.addTarget(field, action: #selector(UIResponder.resignFirstResponder), for: .editingDidEndOnExit)
+        }
+        // Suppress the parent leave handler while pushing this draft, not its saved values.
+        activeWiFiForm = nil
+        awaitingNetworkPermission = false
+        let controller = page(CWL("添加 Wi-Fi")) {
+            [SettingsSection(footer: CWL("返回自动保存。同名网络会更新原预设，兼容信道通常保持 36。"), [
+                .field(CWL("Wi-Fi 名称"), name),
+                .field(CWL("密码"), password, placeholder: CWL("开放网络留空")),
+                .control(CWL("开放网络（无密码）"), open),
+                .field(CWL("兼容信道"), channel, placeholder: "36")
+            ])]
+        }
+        var draftActive = true
+        var draftEdited = false
+        var draftTouched = false
+        var autoFilledCredentialSSID: String?
+        for field in [name, password, channel] {
+            field.addAction(UIAction { _ in draftTouched = true }, for: .editingDidBegin)
+            field.addAction(UIAction { _ in draftTouched = true; draftEdited = true }, for: .editingChanged)
+        }
+        name.addAction(UIAction { [weak name, weak password, weak open] _ in
+            // A credential read for an old SSID must never be carried to a new SSID.
+            if let previous = autoFilledCredentialSSID, name?.text != previous {
+                autoFilledCredentialSSID = nil
+                password?.text = ""
+                open?.isOn = false
+            }
+        }, for: .editingChanged)
+        open.addAction(UIAction { _ in draftTouched = true; draftEdited = true }, for: .valueChanged)
+        controller.onAppear = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            controller.onAppear = nil
+            self.detectDraftWiFiName { [weak self, weak controller] ssid in
+                guard let self, let controller, draftActive, !draftTouched,
+                      self.settingsNavigation?.topViewController === controller,
+                      !self.running, !self.waitingForNetwork, !self.wifiAddSavePending,
+                      let ssid, !ssid.isEmpty, ssid.utf8.count <= 32 else {
+                    return
+                }
+                name.text = ssid
+                if let preset = WiFiPresetStore.presets().first(where: { $0.ssid == ssid }) {
+                    channel.text = String(preset.channel)
+                }
+                self.readDraftWiFiPassword(ssid) { [weak self, weak controller] saved in
+                    guard let self, let controller, draftActive, !draftTouched,
+                          self.settingsNavigation?.topViewController === controller,
+                          !self.running, !self.waitingForNetwork, !self.wifiAddSavePending,
+                          name.text == ssid, let saved,
+                          saved.isEmpty || (8...63).contains(saved.utf8.count) else { return }
+                    autoFilledCredentialSSID = ssid
+                    password.text = saved
+                    open.isOn = saved.isEmpty
+                }
+            }
+        }
+        controller.onLeave = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            // Ignore temporary disappearance (system dialogs, cancelled interactive pop).
+            if let navigation = controller.navigationController,
+               navigation.viewControllers.contains(where: { $0 === controller }),
+               !navigation.isBeingDismissed { return }
+            controller.onLeave = nil
+            draftActive = false
+            self.wifiDraftPermissionCompletion = nil
+            // Preserve return-to-save for a complete known network; an untouched,
+            // incomplete new draft must not raise an error or overwrite a preset.
+            guard draftEdited || (autoFilledCredentialSSID != nil && autoFilledCredentialSSID == name.text) else { return }
+            let ssid = name.text ?? "", secret = password.text ?? ""
+            let channelText = channel.text ?? "", isOpen = open.isOn
+            guard !ssid.isEmpty, !self.running, !self.waitingForNetwork else { return }
+            guard !self.wifiAddSavePending else { return }
+            let validatedChannel = channelText.isEmpty ? UInt8(36) : UInt8(channelText)
+            guard ssid.utf8.count <= 32, let validatedChannel, (1...196).contains(validatedChannel),
+                  isOpen || (8...63).contains(secret.utf8.count) else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.alert(CWL("Wi-Fi 未保存"), CWL("请输入有效的 Wi-Fi 名称、密码和兼容信道。"))
+                }
+                return
+            }
+            // Reserve the transaction before returning from the navigation callback.
+            if self.wifiPasswordReadPending {
+                self.wifiPasswordReadID = nil
+                self.wifiDeferredExitReadID = nil
+                self.passwordLoadedForSSID = nil
+            }
+            self.wifiAddSavePending = true
+            let savedPassword = isOpen ? "" : secret
+            DispatchQueue.main.async { [weak self] in self?.reloadVisibleSettings() }
+            self.wifiAddSaveQueue.async { [weak self] in
+                let result: Result<Bool, Error> = Result {
+                    try WiFiCredentials.save(savedPassword, for: ssid)
+                    return WiFiCredentials.isTemporary(for: ssid)
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.wifiAddSavePending = false
+                    switch result {
+                    case .success(let temporary):
+                        WiFiPresetStore.upsert(ssid: ssid, channel: validatedChannel, isOpen: isOpen)
+                        self.ssidField.text = ssid; self.passwordField.text = savedPassword
+                        self.channelField.text = String(validatedChannel)
+                        self.openNetworkSwitch.isOn = isOpen; self.passwordLoadedForSSID = ssid
+                        self.passwordStatus.text = temporary ? WiFiCredentials.temporaryNotice : CWL("已保存 Wi-Fi 预设“{1}”", [ssid])
+                    case .failure(let error):
+                        if self.passwordLoadedForSSID == nil { self.loadWiFiPassword() }
+                        // No shared fields or preset metadata were changed before success.
+                        self.passwordStatus.text = CWL("保存 Wi-Fi 预设失败：{1}", [error.localizedDescription])
+                    }
+                    self.refreshNetworkSummary()
+                    self.refreshWiFiPresetMenu()
+                    switch result {
+                    case .success(let temporary) where temporary:
+                        self.alert(CWL("Wi-Fi 密码仅本次使用"), WiFiCredentials.temporaryNotice)
+                    case .failure(let error):
+                        self.alert(CWL("Wi-Fi 未保存"), error.localizedDescription)
+                    default: break
+                    }
                 }
             }
         }
@@ -3514,15 +4401,27 @@ extension ReceiverViewController {
     }
 
     private func wifiPresetSections(inline: Bool) -> [SettingsSection] {
+        if wifiAddSavePending { return [SettingsSection([.info(CWL("正在保存 Wi-Fi"), CWL("请稍候"))])] }
         let editable = !running && !waitingForNetwork
         var rows = WiFiPresetStore.presets().map { preset in
             var row = SettingsRow.action(preset.ssid, icon: ("wifi", .systemBlue)) { [unowned self] in
-                guard !self.running, !self.waitingForNetwork else { return }
+                guard !self.running, !self.waitingForNetwork, !self.wifiAddSavePending, !self.wifiPasswordReadPending else { return }
                 self.view.endEditing(true)
                 self.settingsNavigation?.view.endEditing(true)
+                guard !self.wifiPasswordReadPending else { return }
                 if let selected = WiFiPresetStore.selected(), selected.ssid != preset.ssid,
-                   !(self.ssidField.text ?? "").isEmpty, !self.saveCurrentWiFiPreset() {
-                    self.alert(CWL("Wi-Fi 未保存"), self.passwordStatus.text ?? "")
+                   !(self.ssidField.text ?? "").isEmpty {
+                    self.saveCurrentWiFiPreset { [weak self] saved in
+                        guard let self else { return }
+                        guard saved else {
+                            self.alert(CWL("Wi-Fi 未保存"), self.passwordStatus.text ?? "")
+                            return
+                        }
+                        guard !self.running, !self.waitingForNetwork,
+                              WiFiPresetStore.selected()?.ssid == self.ssidField.text else { return }
+                        self.applyWiFiPreset(preset)
+                    }
+                    self.reloadVisibleSettings()
                     return
                 }
                 self.applyWiFiPreset(preset)
@@ -3531,29 +4430,16 @@ extension ReceiverViewController {
             row.checked = { WiFiPresetStore.selected()?.ssid == preset.ssid }
             if editable {
                 row.onDelete = { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork else { return }
-                    do { try WiFiCredentials.forget(preset.ssid) }
-                    catch { self.alert(CWL("删除失败"), CWL("无法删除保存的密码，请重试。")); return }
-                    WiFiPresetStore.remove(preset.ssid)
-                    if self.ssidField.text == preset.ssid {
-                        if let next = WiFiPresetStore.selected() { self.applyWiFiPreset(next) }
-                        else {
-                            self.ssidField.text = ""; self.passwordField.text = ""; self.channelField.text = "36"
-                            self.passwordLoadedForSSID = nil; self.openNetworkSwitch.isOn = false
-                            self.passwordStatus.text = nil
-                            self.refreshNetworkSummary()
-                        }
-                    }
-                    self.refreshWiFiPresetMenu()
+                    guard !self.running, !self.waitingForNetwork, !self.wifiAddSavePending, !self.wifiPasswordReadPending else { return }
+                    self.deleteWiFiPreset(preset.ssid)
                 }
             }
-            return row
+            return row.enabledWhen { [weak self] in self?.connectionSettingsEditable == true }
         }
         if editable {
             if !inline { rows.append(.page(CWL("编辑当前预设"), icon: ("pencil", .systemBlue)) { [unowned self] in self.wifiPage() }) }
             rows.append(.page(CWL("添加 Wi-Fi"), icon: ("plus", .systemGreen)) { [unowned self] in
-                if inline, !(self.ssidField.text ?? "").isEmpty { _ = self.saveCurrentWiFiPreset() }
-                return self.wifiForm(adding: true)
+                return self.addWiFiPage()
             })
         }
         return [SettingsSection(CWL("Wi-Fi 预设"), footer: editable ? CWL("轻点选用，左滑后确认删除。") : editingLockedFooter, rows)]
@@ -3577,7 +4463,7 @@ extension ReceiverViewController {
                     rows.append(.control("CarPlay 画面", icon: ("aspectratio", .systemBlue), zeehoSEPlusCanvasControl))
                     rows.append(.control("视频发送方式", icon: ("film", .systemIndigo), zeehoSEPlusVideoModeControl))
                     rows.append(.info("当前发送方式", selectedZeehoVideoMode.title))
-                    rows.append(.info(CWL("使用说明"), "全宽适合本机 1600×770 仪表。直传兼容性待实测，黑屏时改回兼容转码。25 FPS 自动使用转码。锁屏时暂停手机预览，后台保持需开启。"))
+                    rows.append(.info(CWL("使用说明"), "全宽适合本机 1600×770 仪表。直传兼容性待实测，黑屏时改回兼容转码。25 FPS 自动使用转码。锁屏时暂停手机预览，后台保持默认开启。"))
                 }
                 if usesAutomaticZeehoAddress {
                     rows.append(.info("仪表 IP", "连接时自动匹配，结果见日志"))
@@ -3596,7 +4482,7 @@ extension ReceiverViewController {
                     : Self.ninebotOfficialInstructions
                 let keepOfficialApp = fiveInch
                     ? CWL("没有画面时，保持 DerPlay 运行，再到九号出行开启投屏导航。仪表出画后，可尝试从多任务界面划掉九号出行；若仪表随之退出投屏，则该型号需要保留官方会话。")
-                    : CWL("九号出行必须保留在后台，不能从多任务界面划掉。切换 App 前请打开「锁屏与后台继续运行」。")
+                    : CWL("九号出行必须保留在后台，不能从多任务界面划掉。DerPlay 默认支持后台运行，但仍受 iOS 系统限制。")
                 var instructions: [SettingsRow] = [
                     .guide(CWL("启动顺序"), icon: ("play.circle", .systemBlue), startup),
                     .guide(fiveInch ? CWL("没有画面时") : CWL("九号出行需保留后台"),
@@ -3645,54 +4531,72 @@ extension ReceiverViewController {
 
     private func retryAirPlayTransport() {
         guard running, outputMode == .airPlay else { return }
-        if airPlaySourceIsStale {
-            // Reloading old HLS segments cannot restore the CarPlay producer.
-            restartCarPlay(reason: CWL("AirPlay 长时间未收到新画面，重新建立 CarPlay 会话"))
-        } else {
-            startAirPlayTransport()
-        }
+        receiver.requestKeyFrame(reason: "AirPlay manual recovery")
+        airPlayRecoveryCount = 0
+        airPlayLastRecoveryAt = nil
+        airPlayTransportRecovery.reset()
+        startAirPlayTransport()
     }
 
     private func startAirPlayTransport() {
-        guard airPlayReady, let url = airPlayStreamURL else { return }
-        let player: AVPlayer
-        if let existing = airPlayPlayer {
-            player = existing
-        } else {
-            // Local video stays on the CarPlay surface. Each session owns its player.
-            player = AVPlayer()
-            player.allowsExternalPlayback = true
-            player.usesExternalPlaybackWhileExternalScreenIsActive = true
-            airPlayRouteObservation = player.observe(\.isExternalPlaybackActive, options: [.new]) { [weak self] _, _ in
-                DispatchQueue.main.async { [weak self] in self?.refreshAirPlayPlaybackStatus() }
-            }
-            airPlayPlayer = player
-        }
-        // Replacing an item must also discard observations of that item's wait state.
+        guard running, outputMode == .airPlay, airPlayReady, let url = airPlayStreamURL else { return }
+        // Invalidate queued observations before retiring the previous player.
+        airPlayItemObservation?.invalidate()
         airPlayItemObservation = nil
+        airPlayRouteObservation?.invalidate()
+        airPlayRouteObservation = nil
+        airPlayTimeObservation?.invalidate()
         airPlayTimeObservation = nil
+        let previous = airPlayPlayer
+        airPlayPlayer = nil
+        previous?.pause()
+        previous?.allowsExternalPlayback = false
+        previous?.replaceCurrentItem(with: nil)
+        let player = AVPlayer()
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        airPlayPlayer = player
+        airPlayRouteObservation = player.observe(\.isExternalPlaybackActive, options: [.new]) { [weak self, weak player] _, _ in
+            DispatchQueue.main.async { [weak self, weak player] in
+                guard let self, let player, self.airPlayPlayer === player else { return }
+                self.refreshAirPlayPlaybackStatus()
+            }
+        }
+        resetAirPlayProgress()
+        airPlayBufferTelemetry.reset()
+        airPlayWaitingSince = nil
+        startAirPlayHealthTimerIfNeeded()
+        airPlayDiagnostic = ""
+        airPlayTimeObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self, weak player] _, _ in
+            DispatchQueue.main.async { [weak self, weak player] in
+                guard let self, let player, self.airPlayPlayer === player else { return }
+                self.refreshAirPlayPlaybackStatus()
+            }
+        }
+        installAirPlayItem(url: url, on: player, reason: "initial stream")
+    }
+
+    /// Reloads only the HLS item. The AVPlayer instance and the user's selected
+    /// AirPlay route are kept intact; route selection is never automated here.
+    private func installAirPlayItem(url: URL, on player: AVPlayer, reason: String) {
+        guard airPlayPlayer === player, running, outputMode == .airPlay else { return }
+        airPlayItemObservation?.invalidate()
+        airPlayItemObservation = nil
+        resetAirPlayProgress()
+        airPlayBufferTelemetry.reset()
         airPlayWaitingSince = nil
         let item = AVPlayerItem(url: url)
-        if airPlayHealthTimer == nil {
-            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshAirPlayPlaybackStatus() }
-            RunLoop.main.add(timer, forMode: .common)
-            airPlayHealthTimer = timer
-        }
-        #if DEBUG
-        airPlayDiagnostic = ""
-        log(CWL("AirPlay HLS 已就绪：{1}", [String(describing: url.absoluteString)]))
-        #endif
-        airPlayTimeObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { [weak self] in self?.refreshAirPlayPlaybackStatus() }
-        }
-        airPlayItemObservation = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
-            DispatchQueue.main.async { [weak self, weak item] in
-                guard let self, let item, self.airPlayPlayer?.currentItem === item else { return }
+        item.preferredForwardBufferDuration = 3
+        airPlayItemObservation = item.observe(\.status, options: [.new]) { [weak self, weak item, weak player] _, _ in
+            DispatchQueue.main.async { [weak self, weak item, weak player] in
+                guard let self, let item, let player,
+                      self.airPlayPlayer === player, player.currentItem === item else { return }
                 self.refreshAirPlayPlaybackStatus()
             }
         }
         player.replaceCurrentItem(with: item)
         player.play()
+        log("AirPlay HLS item installed (\(reason)); preferred forward buffer=3s")
         refreshAirPlayPlaybackStatus()
     }
 
@@ -3705,40 +4609,126 @@ extension ReceiverViewController {
         }
     }
 
+    private func resetAirPlayProgress() {
+        airPlayTimelineTelemetry.reset()
+        airPlayProgressAnchor = nil
+        airPlayTimelineStalled = false
+    }
+
+    private func airPlayBufferedAheadSeconds(item: AVPlayerItem, player: AVPlayer) -> Double? {
+        let current = player.currentTime().seconds
+        guard current.isFinite else { return nil }
+        return item.loadedTimeRanges.compactMap { value -> Double? in
+            let range = value.timeRangeValue
+            let start = range.start.seconds
+            let end = CMTimeRangeGetEnd(range).seconds
+            guard start.isFinite, end.isFinite, end >= current, start <= current + 0.5 else { return nil }
+            return max(0, end - current)
+        }.max()
+    }
+
     private func refreshAirPlayPlaybackStatus() {
-        guard running, outputMode == .airPlay, airPlayReady, let player = airPlayPlayer,
+        guard UIApplication.shared.applicationState == .active,
+              running, outputMode == .airPlay, airPlayReady, let player = airPlayPlayer,
               let item = player.currentItem else { return }
-        #if DEBUG
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue)/\($0.portName)" }.joined(separator: ", ")
         let error = item.error as NSError?
         let errorDetail = error.map { "\($0.domain)(\($0.code)) \($0.localizedDescription)" } ?? "–"
         let diagnostic = CWL("AirPlay 播放器：item={1} time={2} 外部视频={3} 路由={4} 等待={5} 错误={6}", [String(describing: item.status.rawValue), String(describing: player.timeControlStatus.rawValue), String(describing: player.isExternalPlaybackActive), String(describing: outputs), String(describing: player.reasonForWaitingToPlay?.rawValue ?? "–"), String(describing: errorDetail)])
         if diagnostic != airPlayDiagnostic { airPlayDiagnostic = diagnostic; log(diagnostic) }
-        #endif
         // A selected audio route is not proof of external video playback.
         // Do not accumulate a video buffering timeout before external playback starts.
         let hasAirPlayRoute = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
         guard player.isExternalPlaybackActive else {
+            resetAirPlayProgress()
             airPlayWaitingSince = nil
             airPlayRetryButton.isHidden = true
             updateAirPlayStatus(hasAirPlayRoute ? CWL("正在连接 AirPlay…") : CWL("请选择 AirPlay 设备"))
             return
         }
         let now = ProcessInfo.processInfo.systemUptime
+        let bufferedAhead = airPlayBufferedAheadSeconds(item: item, player: player)
+        let bufferSnapshot = DerPlayAirPlayBufferTelemetry.Snapshot(
+            isEmpty: item.isPlaybackBufferEmpty,
+            likelyToKeepUp: item.isPlaybackLikelyToKeepUp,
+            isFull: item.isPlaybackBufferFull,
+            bufferedAheadSeconds: bufferedAhead
+        )
+        if airPlayBufferTelemetry.shouldLog(bufferSnapshot, at: now) {
+            let ahead = bufferSnapshot.bufferedAheadBucket.map { String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), Double($0) / 2) } ?? "unknown"
+            let seekableRanges = item.seekableTimeRanges.map { value -> (start: Double, end: Double) in
+                let range = value.timeRangeValue
+                return (range.start.seconds, CMTimeRangeGetEnd(range).seconds)
+            }
+            let liveLag = DerPlayAirPlayLiveEdge.lagSeconds(position: player.currentTime().seconds, ranges: seekableRanges)
+            let lag = liveLag.map { String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "unknown"
+            log("AirPlay buffer telemetry: empty=\(bufferSnapshot.isEmpty) likelyToKeepUp=\(bufferSnapshot.likelyToKeepUp) full=\(bufferSnapshot.isFull) ahead≈\(ahead)s localSeekableEdgeLag=\(lag)s")
+        }
         if player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
             if airPlayWaitingSince == nil { airPlayWaitingSince = now }
         } else { airPlayWaitingSince = nil }
         let prolongedWait = airPlayWaitingSince.map { now - $0 >= 10 } ?? false
+        // AVPlayer's clock is evidence of local playback progress, not TV rendering.
+        let position = player.currentTime().seconds
+        if UIApplication.shared.applicationState == .active, item.status == .readyToPlay,
+           player.timeControlStatus == .playing, position.isFinite {
+            if let jump = airPlayTimelineTelemetry.sample(position: position, at: now, rate: Double(player.rate)) {
+                log("AirPlay local timeline jump: \(jump.rawValue) position=\(position)s")
+            }
+            if let anchor = airPlayProgressAnchor, now - anchor.uptime <= 60,
+               abs(position - anchor.position) < 0.05 {
+                if now - anchor.uptime >= 10, !airPlayTimelineStalled {
+                    airPlayTimelineStalled = true
+                    log("AirPlay player clock stalled >= 10s")
+                }
+            } else {
+                if airPlayTimelineStalled { log("AirPlay player clock advanced or reset") }
+                airPlayTimelineStalled = false
+                airPlayProgressAnchor = (position, now)
+            }
+        } else { resetAirPlayProgress() }
         let sourceStale = airPlaySourceIsStale
         if sourceStale != airPlaySourceWasStale {
             airPlaySourceWasStale = sourceStale
-            log(sourceStale ? CWL("已超过 10 秒未收到新画面，可重试连接 CarPlay。") : CWL("AirPlay 已恢复接收新画面。"))
+            log(sourceStale ? "AirPlay source idle >= 10s (not proof of disconnect)" : "AirPlay source frames resumed")
         }
         let paused = item.status == .readyToPlay && player.timeControlStatus == .paused
-        airPlayRetryButton.isHidden = item.status != .failed && !sourceStale && !prolongedWait && !paused
-        if sourceStale {
-            updateAirPlayStatus(CWL("已超过 10 秒未收到新画面，可重试连接 CarPlay。"))
+        airPlayRetryButton.isHidden = item.status != .failed && !prolongedWait && !paused && !airPlayTimelineStalled
+        // Only recover a prolonged external buffering state, never an explicit pause.
+        if prolongedWait || airPlayTimelineStalled, item.status != .failed, UIApplication.shared.applicationState == .active,
+           airPlayRecoveryCount < 2, airPlayLastRecoveryAt.map({ now - $0 >= 15 }) ?? true {
+            airPlayRecoveryCount += 1
+            airPlayLastRecoveryAt = now
+            receiver.requestKeyFrame(reason: "AirPlay buffering recovery")
+            log("AirPlay buffering recovery attempt \(airPlayRecoveryCount)/2")
+        }
+        // After keyframe requests have been exhausted, a fresh upstream source
+        // plus a failed/stalled HLS item may justify reloading that item. Never
+        // do this while backgrounded, while explicitly paused, or with stale source.
+        let sourceFramesAreFresh = airPlayLastVideoAt.map { now - $0 < 10 } ?? false
+        let mayReloadAfterKeyframes = (prolongedWait || airPlayTimelineStalled)
+            && airPlayRecoveryCount >= 2
+            && (airPlayLastRecoveryAt.map { now - $0 >= 15 } ?? false)
+        let reloadAction = airPlayTransportRecovery.evaluate(
+            at: now,
+            appIsActive: UIApplication.shared.applicationState == .active,
+            externalPlaybackIsActive: player.isExternalPlaybackActive,
+            sourceFramesAreFresh: sourceFramesAreFresh,
+            itemFailed: item.status == .failed,
+            playbackWaitIsProlonged: mayReloadAfterKeyframes,
+            timelineIsStalled: mayReloadAfterKeyframes,
+            explicitlyPaused: item.status == .readyToPlay && player.timeControlStatus == .paused
+        )
+        switch reloadAction {
+        case .none:
+            break
+        case .reloadCurrentItem(let attempt):
+            guard let url = airPlayStreamURL else { break }
+            log("AirPlay HLS item recovery attempt \(attempt)/2; source frames are fresh")
+            installAirPlayItem(url: url, on: player, reason: "bounded recovery \(attempt)/2")
             return
+        case .exhausted:
+            log("AirPlay HLS item recovery exhausted; waiting for manual retry")
         }
         if item.status == .failed {
             updateAirPlayStatus(CWL("AirPlay 画面加载失败，可以重试。"))
@@ -3748,8 +4738,16 @@ extension ReceiverViewController {
             updateAirPlayStatus(prolongedWait ? CWL("AirPlay 缓冲时间较长，可以重试。") : CWL("AirPlay 正在缓冲画面…"))
             return
         }
+        if airPlayTimelineStalled {
+            updateAirPlayStatus(CWL("AirPlay 播放时间未推进，可以重试。"))
+            return
+        }
         if paused {
             updateAirPlayStatus(CWL("AirPlay 已暂停，可以重试。"))
+            return
+        }
+        guard item.status == .readyToPlay, player.timeControlStatus == .playing else {
+            updateAirPlayStatus(CWL("AirPlay 正在缓冲画面…"))
             return
         }
         let defaults = UserDefaults.standard
@@ -3770,7 +4768,7 @@ extension ReceiverViewController {
 
     private func tailingOutputSections() -> [SettingsSection] {
         [
-            SettingsSection(CWL("台铃 4.3 寸"), footer: CWL("适用于 TL-DASH-V2 仪表。iPhone 加入仪表 Wi-Fi，在「Wi-Fi 与网络」填写该网络信息；开启仪表投屏后启动 CarPlay。请先退出其他投屏 App。"), [
+            SettingsSection(CWL("台铃 4.3 寸"), footer: CWL("适用于 TL-DASH-V2 仪表。iPhone 加入仪表 Wi-Fi，在「Wi-Fi 网络」填写该网络信息；开启仪表投屏后启动 CarPlay。请先退出其他投屏 App。"), [
                 .field(CWL("仪表 IP 地址"), tailingAddressField, placeholder: "192.168.1.1")
             ]),
             SettingsSection(footer: CWL("仪表输出固定为 480×272、JPEG，最高 20 FPS。本机 CarPlay 使用 H.264、960×544、30 FPS。声音由 iPhone／蓝牙输出；仪表不回传触控。"), [])
@@ -3924,12 +4922,8 @@ extension ReceiverViewController {
         return controller
     }
 
-    private func experimentSections() -> [SettingsSection] {
-        var sections = [SettingsSection(CWL("实验性功能"), footer: CWL("检查这台 iPhone 是否允许 App 发布本机 iAP2 配件端点（本机 CarPlay 的前提）。CarPlay 运行中不能测试。"), [
-            .action(CWL("测试本机传输能力"), icon: ("checkmark.shield.fill", .systemPink), detail: { [unowned self] in self.statusLabel.text }) { [unowned self] in
-                self.testSameDeviceTransport()
-            }
-        ])]
+    private func iPadConnectionSections() -> [SettingsSection] {
+        var sections: [SettingsSection] = []
         if UIDevice.current.userInterfaceIdiom == .pad {
             sections.append(SettingsSection(CWL("iPad 模式"), footer: CWL("接收其他 iPhone 的 CarPlay，或把这台设备的 CarPlay 投送到另一台 iPad。"), [.view(modeControl)]))
             if modeControl.selectedSegmentIndex == 0 {
@@ -3941,22 +4935,23 @@ extension ReceiverViewController {
         return sections
     }
 
+    @objc private func browserViewAreaProbeChanged() {
+        let key = ReceiverConfiguration.experimentalBrowserViewAreasKey
+        guard !running, !waitingForNetwork else {
+            browserViewAreaProbeSwitch.setOn(UserDefaults.standard.bool(forKey: key), animated: true)
+            return
+        }
+        UserDefaults.standard.set(browserViewAreaProbeSwitch.isOn, forKey: key)
+    }
+
     private func browserExperimentsPage() -> SettingsPageController {
         page("实验功能") { [unowned self] in
             guard self.outputMode == .browser, self.videoOutputSwitch.isOn else { return [] }
+            self.browserViewAreaProbeSwitch.isOn = UserDefaults.standard.bool(forKey: ReceiverConfiguration.experimentalBrowserViewAreasKey)
+            self.browserViewAreaProbeSwitch.isEnabled = !self.running && !self.waitingForNetwork
             return [
                 SettingsSection("浏览器原生动态布局（实验）", footer: "默认关闭。仅浏览器独立输出生效；每次连接最多尝试一次原生区域切换，切换后触控暂停至会话结束。Build 9 真机实验失败，修复待验收。请停车测试。停止连接后才能更改。", [
-                    .action("原生动态布局探测", icon: ("rectangle.split.2x1", .systemOrange), detail: {
-                        UserDefaults.standard.bool(forKey: ReceiverConfiguration.experimentalBrowserViewAreasKey) ? CWL("开") : CWL("关")
-                    }) { [unowned self] in
-                        guard !self.running, !self.waitingForNetwork else {
-                            self.alert("请先停止连接", "实验设置仅在下一次连接时生效。"); return
-                        }
-                        let key = ReceiverConfiguration.experimentalBrowserViewAreasKey
-                        let enabled = UserDefaults.standard.bool(forKey: key)
-                        UserDefaults.standard.set(!enabled, forKey: key)
-                        self.reloadVisibleSettings()
-                    }
+                    .control("原生动态布局探测", icon: ("rectangle.split.2x1", .systemOrange), self.browserViewAreaProbeSwitch)
                 ]),
                 SettingsSection(footer: "持续卡顿时重新启动会话，先降至 30 FPS，再降至 720P，每次最多两次。默认关闭。", [
                     .control("卡顿自动降级", icon: ("arrow.clockwise", .systemGreen), autoRestartSwitch)
@@ -3965,35 +4960,25 @@ extension ReceiverViewController {
         }
     }
 
-    private func diagnosticsSection() -> SettingsSection {
+    private func aboutDeviceSection() -> SettingsSection {
         var system = utsname(); uname(&system)
         let model = withUnsafeBytes(of: &system.machine) {
             String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
         }
-        return SettingsSection(CWL("诊断信息"), [
+        return SettingsSection([
             .page(CWL("日志"), icon: ("doc.text.fill", .systemGray)) { [unowned self] in self.logPage() },
-            .info(CWL("浏览器页面"), BrowserReceiverPage.version),
             .info(CWL("设备"), "\(model) · iOS \(UIDevice.current.systemVersion)"),
-            .info(CWL("MFi 身份"), identity != nil ? CWL("已载入") : CWL("未载入"))
+            .info(CWL("MFi 证书"), identity != nil ? CWL("已载入") : CWL("未载入"))
         ])
-    }
-
-    private func diagnosticsPage() -> SettingsPageController {
-        page(CWL("诊断与实验")) { [unowned self] in
-            [diagnosticsSection()] + experimentSections()
-        }
     }
 
     // DerPlay uses a single native multi-file picker; HTTPS import is unchanged.
     private func derPlayIdentityPage() -> SettingsPageController {
-        page("MFi 身份管理") { [unowned self] in
-            let format = (try? DerPlayIdentityVault.read())?.material?.format
-            return [SettingsSection(footer: "选择完整的两个或三个身份文件，自动识别格式。仅在本机处理合法认证材料；本地自检通过不代表车机认证成功。", [
-                .info("身份状态", self.derPlayIdentityImporting ? "验证中…" : self.identity == nil ? "未配置" : "已载入"),
-                .info("身份格式", self.identity == nil ? "—" : (format ?? "已有身份")),
-                .info("证书与私钥匹配", self.identity == nil ? "未检测" : "本地自检通过"),
-                .action(self.identity == nil ? "导入 MFi 身份" : "重新导入 MFi 身份", icon: ("square.and.arrow.down", .systemGreen)) { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting, self.derPlayIdentityPicker == nil else { self.alert("当前无法导入", "请先停止连接或完成当前文件选择。"); return }
+        page(CWL("MFi 证书管理")) { [unowned self] in
+            return [SettingsSection(footer: CWL("选择完整的两个或三个证书及私钥文件，自动识别格式。仅在本机处理合法认证材料；本地自检通过不代表车机认证成功。"), [
+                .info(CWL("证书状态"), self.derPlayIdentityImporting ? CWL("验证中…") : self.identity == nil ? CWL("未配置") : CWL("已载入")),
+                .action(self.identity == nil ? CWL("导入 MFi 证书") : CWL("重新导入 MFi 证书"), icon: ("square.and.arrow.down", .systemGreen)) { [unowned self] in
+                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting, self.derPlayIdentityPicker == nil else { self.alert(CWL("当前无法导入"), CWL("请先停止连接或完成当前文件选择。")); return }
                     // Explicit extension hints plus generic data for unknown or renamed files.
                     // Actual format is still verified from contents, not the extension.
                     let hints = ["p7b", "pk8", "cer", "x963"].compactMap { UTType(filenameExtension: $0, conformingTo: .data) }
@@ -4004,20 +4989,20 @@ extension ReceiverViewController {
                     self.log("MFi：已请求系统复制式多文件选择器")
                     (self.settingsNavigation ?? self).present(picker, animated: true)
                 },
-                .action("重新检测身份", icon: ("arrow.clockwise", .systemBlue)) { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting else { self.alert("请先停止连接", "连接期间不能重新载入身份。"); return }
+                .action(CWL("重新检测证书"), icon: ("arrow.clockwise", .systemBlue)) { [unowned self] in
+                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting else { self.alert(CWL("请先停止连接"), CWL("连接期间不能重新载入证书。")); return }
                     self.identity = (try? AccessoryIdentityStore.load()) ?? (try? AccessoryIdentityStore.loadFromBundle())
                     self.modeChanged(); self.reloadVisibleSettings()
-                    self.alert("身份检测", self.identity == nil ? "未找到有效的本机身份。" : "本地身份已载入，仍需实际连接验证。")
+                    self.alert(CWL("证书检测"), self.identity == nil ? CWL("未找到有效的本机证书。") : CWL("本地证书已载入，仍需实际连接验证。"))
                 },
-                .action("清除已导入身份", icon: ("trash", .systemRed), destructive: true) { [unowned self] in
-                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting else { self.alert("请先停止连接", "连接期间不能清除身份。"); return }
-                    let prompt = UIAlertController(title: "清除身份？", message: "清除本机保存的身份后，需要重新导入才能启动。原始文件不会被删除。", preferredStyle: .alert)
-                    prompt.addAction(UIAlertAction(title: "取消", style: .cancel))
-                    prompt.addAction(UIAlertAction(title: "清除", style: .destructive) { [weak self] _ in
+                .action(CWL("清除已导入证书"), icon: ("trash", .systemRed), destructive: true) { [unowned self] in
+                    guard !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting else { self.alert(CWL("请先停止连接"), CWL("连接期间不能清除证书。")); return }
+                    let prompt = UIAlertController(title: CWL("清除证书？"), message: CWL("清除本机保存的证书后，需要重新导入才能启动。原始文件不会被删除。"), preferredStyle: .alert)
+                    prompt.addAction(UIAlertAction(title: CWL("取消"), style: .cancel))
+                    prompt.addAction(UIAlertAction(title: CWL("清除"), style: .destructive) { [weak self] _ in
                         guard let self, !self.running, !self.waitingForNetwork, !self.derPlayIdentityImporting else { return }
                         do { try AccessoryIdentityStore.clearIdentity() }
-                        catch { self.alert("清除未完整完成", error.localizedDescription) }
+                        catch { self.alert(CWL("清除未完整完成"), error.localizedDescription) }
                         self.identity = (try? AccessoryIdentityStore.load()) ?? (try? AccessoryIdentityStore.loadFromBundle())
                         self.modeChanged(); self.reloadVisibleSettings()
                     })
@@ -4027,10 +5012,28 @@ extension ReceiverViewController {
         }
     }
 
+    // UI terminology only; the original recognition/Keychain implementation is unchanged.
+    private func certificateImportErrorMessage(_ error: Error) -> String {
+        guard let failure = error as? DerPlayIdentityImport.Failure else {
+            return CWL("证书验证或本机保存失败，原有证书未被替换。")
+        }
+        switch failure {
+        case .selection: return CWL("请选择一组完整的两个或三个证书及私钥文件。")
+        case .missingChain: return CWL("缺少 DER PKCS#7 证书链文件。")
+        case .missingKey: return CWL("缺少支持的 P-256 私钥文件。")
+        case .missingLeaf: return CWL("X9.63 私钥需要同时选择 DER 叶证书文件。")
+        case .file: return CWL("无法读取证书及私钥文件，或文件超过 64 KB。")
+        case .format: return CWL("证书及私钥文件格式不受支持。需要 DER PKCS#7 证书链和 P-256 PKCS#8 私钥，或证书链、DER 叶证书和 X9.63 私钥。")
+        case .mismatch: return CWL("证书链中没有与私钥匹配的叶证书，或所选叶证书不在证书链中。")
+        case .ambiguous: return CWL("检测到重复文件或多组可能的证书材料，请只选择一组。")
+        case .keychain(let status): return CWL("本机 Keychain 操作失败（{1}）。", [String(status)])
+        }
+    }
     private func importDerPlayIdentity(_ files: Result<[Data], Error>) {
-        guard !running, !waitingForNetwork, !derPlayIdentityImporting else { alert("请先停止连接或等待导入完成", "当前无法替换身份。"); return }
+        guard !running, !waitingForNetwork, !derPlayIdentityImporting else { alert(CWL("请先停止连接或等待导入完成"), CWL("当前无法替换证书。")); return }
         derPlayIdentityImporting = true
         startButton.isEnabled = false
+        refreshDerPlayPanel()
         reloadVisibleSettings()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = files.flatMap { data in Result { try DerPlayIdentityImport.recognize(data) } }
@@ -4044,12 +5047,12 @@ extension ReceiverViewController {
                 do {
                     self.identity = try AccessoryIdentityStore.importMaterial(result.get())
                     self.log("MFi：本地匹配检查与 Keychain 保存成功")
-                    self.alert("导入成功", "已通过证书与私钥本地匹配检查并保存。实际 CarPlay 认证仍需连接验证。")
+                    self.alert(CWL("导入成功"), CWL("已通过证书与私钥本地匹配检查并保存。实际 CarPlay 认证仍需连接验证。"))
                 } catch {
                     // Never include file paths, raw key material or provider errors in logs.
-                    let message = (error as? DerPlayIdentityImport.Failure)?.errorDescription ?? "身份验证或本机保存失败，原有身份未被替换。"
-                    self.log("MFi：导入失败，未替换原有身份")
-                    self.alert("导入失败", message)
+                    let message = self.certificateImportErrorMessage(error)
+                    self.log(CWL("MFi：导入失败，未替换原有证书"))
+                    self.alert(CWL("导入失败"), message)
                 }
             }
         }
@@ -4059,11 +5062,7 @@ extension ReceiverViewController {
         page(CWL("关于")) { [unowned self] in
             [
                 SettingsSection([.view(self.aboutIdentityCard())]),
-                SettingsSection(self.aboutLinks()),
-                SettingsSection("开源致谢", footer: "AGPL-3.0\n上游版权 Copyright © 2026 xmz28", centered: true, [
-                    .externalLink("原项目 CarWithin", icon: ("link", .systemGray)) { UIApplication.shared.open(URL(string: "https://github.com/xmz28/CarWithin")!) },
-                    .page("原项目贡献者", icon: ("hands.sparkles.fill", .systemOrange)) { ContributionsViewController() }
-                ])
+                SettingsSection(nil, footer: "AGPL-3.0\n上游版权 Copyright © 2026 xmz28", centered: true, self.aboutDeviceSection().rows + self.aboutLinks())
             ]
         }
     }
@@ -4093,20 +5092,22 @@ extension ReceiverViewController {
         version.font = .preferredFont(forTextStyle: .subheadline)
         version.textColor = .secondaryLabel
         version.adjustsFontForContentSizeCategory = true
+        version.textAlignment = .center
         let introduction = UILabel()
-        introduction.text = "面向 iPhone 的通用无线车机互联工具"
+        introduction.text = "iPhone 通用无线车机互联工具"
         introduction.font = .preferredFont(forTextStyle: .subheadline)
         introduction.textColor = .secondaryLabel
         introduction.adjustsFontForContentSizeCategory = true
         introduction.textAlignment = .center
         introduction.numberOfLines = 0
 
-        let card = UIStackView(arrangedSubviews: [icon, name, version, introduction])
+        let card = UIStackView(arrangedSubviews: [icon, name, introduction, version])
         card.axis = .vertical
         card.alignment = .center
         card.spacing = 4
         card.setCustomSpacing(12, after: icon)
-        card.setCustomSpacing(12, after: version)
+        card.setCustomSpacing(8, after: name)
+        card.setCustomSpacing(8, after: introduction)
         card.isLayoutMarginsRelativeArrangement = true
         card.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 16, leading: 8, bottom: 16, trailing: 8)
         return card

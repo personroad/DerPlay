@@ -6380,12 +6380,12 @@
       "kind": "literal"
     },
     {
-      "zh": "正在显示 CarPlay",
-      "en": "Displaying CarPlay",
+      "zh": "CarPlay窗口已开启",
+      "en": "CarPlay window is open",
       "sources": [
         {
           "path": "App/ReceiverViewController.swift",
-          "line": 563,
+          "line": 789,
           "arguments": []
         }
       ],
@@ -16444,6 +16444,163 @@
       "note": "网页文案，后续需单独接入 JavaScript/HTML 本地化。"
     },
     {
+      "id": "S937",
+      "zh": "点击复制访问地址:{1}",
+      "en": "Tap to copy access address:{1}",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3038,
+          "arguments": [
+            "address"
+          ]
+        }
+      ],
+      "scope": "native",
+      "kind": "template",
+      "note": "首页仅浏览器互联且 CarPlay 窗口已开启时显示；点击复制仅复制 IP:端口。"
+    },
+    {
+      "id": "S938",
+      "zh": "互联模式",
+      "en": "Interconnection mode",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 637,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 645,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 653,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 660,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 668,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3438,
+          "arguments": []
+        },
+        {
+          "path": "App/DerPlayGlassUI.swift",
+          "line": 180,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139 互联入口合并及页内选择。"
+    },
+    {
+      "id": "S939",
+      "zh": "连接协议",
+      "en": "Connection protocol",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3116,
+          "arguments": []
+        },
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3152,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139 互联入口合并及页内选择。"
+    },
+    {
+      "id": "S940",
+      "zh": "请在互联模式的「Wi-Fi 与网络」确认当前网络。",
+      "en": "Check the current network under Interconnection mode → Wi-Fi & Network.",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 1783,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139：导航名称同步。"
+    },
+    {
+      "id": "S941",
+      "zh": "回到 DerPlay，在「互联模式 → Wi-Fi 与网络」读取或填写当前网络，返回时保存。",
+      "en": "Return to DerPlay, read or enter the current network under Interconnection mode → Wi-Fi & Network, then go back to save.",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3555,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139：导航名称同步。"
+    },
+    {
+      "id": "S942",
+      "zh": "车机连同一个 Wi-Fi。在「互联模式」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。",
+      "en": "Connect the head unit to the same Wi-Fi. Select Browser under Interconnection mode, start CarPlay, then open the HTTP address shown on the home screen on the head unit.",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3559,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139：导航名称同步。"
+    },
+    {
+      "id": "S943",
+      "zh": "使用仪表时先加入仪表 Wi-Fi，再按互联模式中的仪表说明操作。CarLife 先打开车机上的 CarLife；AirPlay 在互联模式中选择接收设备。",
+      "en": "For an instrument display, join its Wi-Fi first, then follow the instrument instructions under Interconnection mode. For CarLife, open CarLife on the head unit first. For AirPlay, select a receiving device under Interconnection mode.",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3561,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139：导航名称同步。"
+    },
+    {
+      "id": "S944",
+      "zh": "确认选对仪表型号、仪表已打开投屏，并在「互联模式 → 仪表设置」核对仪表 IP。先结束其他投屏。",
+      "en": "Confirm the correct instrument model is selected, casting is enabled on the instrument, and its IP address is correct under Interconnection mode → Instrument settings. End any other casting sessions first.",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3570,
+          "arguments": []
+        }
+      ],
+      "scope": "native",
+      "kind": "literal",
+      "note": "R139：导航名称同步。"
+    },
+    {
       "id": "H001",
       "zh": "配置 DerPlay HTTPS",
       "en": "Set Up DerPlay HTTPS",
@@ -16622,6 +16779,21 @@
       "scope": "permission",
       "kind": "literal",
       "note": "NSMicrophoneUsageDescription"
+    },
+    {
+      "zh": "通用",
+      "en": "General",
+      "sources": [
+        {
+          "path": "App/ReceiverViewController.swift",
+          "line": 3865,
+          "arguments": []
+        }
+      ],
+      "id": "S945",
+      "scope": "native",
+      "note": "R142 settings entry and page title",
+      "kind": "literal"
     }
   ]
 }

@@ -205,3 +205,11 @@ Based on DerPlay-build8-declaration-checkpoint.zip. DiPlay local VIEW_AREAS.md a
 
 ### Build 15 R44 — 2026-11-26
 基线 R43。用户批准互联方式排序：本机 CarPlay、浏览器、AirPlay、Carlink、百度 CarLife、亿连 Easy Connect、其余仪表原顺序；两个开发中协议仍禁用。关于页面使用说明、版本记录、检查更新、Releases 同卡；移除 GitHub 项目及上游版本/关注/支持入口，开源致谢居中仅保留原项目和贡献者，版权及 AGPL 底部。竖屏本机预览顺时针旋转，按比例适配；全屏根据显示计划请求系统方向，退出请求竖屏；不修改协议输出尺寸。更新明确授权的历史源码锁及 UI 测试，112 项 Python 回归通过，Swift 语法解析通过；无 Apple SDK/Xcode/真机验证，实际旋转、触控、PiP 和玻璃效果待验证。正式 Build 14 不变，未上传或发布。
+
+
+## R69 — 用户确认的关于页与 CarPlay Dashboard 设置预览（2026-11-26）
+- 当前内部源码检查点 0.0.1 Build 16 / R69，直接继承 R68 工作树（无 .git，远端 SHA 未核验）。未授权 Build17，不生成正式交付包、不推送、不发布。
+- 用户明确要求：使用说明移到软件设置最外层、软件外观上方；关于页删除版本记录入口，保留内部实现；检查更新在 GitHub Releases 上方；简介改为“iPhone 通用无线车机互联工具”，版本信息在简介下面，居中；开源致谢卡片上移，标题上下各12pt；原项目、贡献者、AGPL 与上游版权保留。R68 原生动态布局探测 UISwitch 保留。
+- 用户确认地图、音乐分栏日夜设计后要求继续开发。共享 DerPlayAppearancePreview 使用八个本地图片资源（独立日夜 Dashboard、三个 Dock 图标的日夜变体），来源为用户确认的 AI 设计图 DESIGN_ASSETS/R69/dashboard-approved.png，不是苹果官方截图或原始图标。Dashboard 图片等比例显示；选择自动/左右/底部时组合 Dock；自动继承 legacy driving side，未改实际协议。为匹配已批准的宽幅设计，左右 Dock 预览高宽比 0.36、底部 0.46（实现决定），窄屏图标适配；实际画面不变。两个页均跟随现有 CarPlay 日夜设置，系统外观变化时刷新两个预览页，软件外观独立。地图、音乐、日程均为示例静态内容，不是实际导航、音乐或日历信息。
+- 源码修改仅 App/ReceiverViewController.swift、App/SettingsUI.swift、App/DerPlayGlassUI.swift 及新增图片资源；相关测试和明确授权的基线更新。底层协议与 AirPlay R62–R67 修复、MFi、现有开关和偏好存储不变。
+- 首次 Python 129 项有3项旧入口/整文件锁断言失败，按用户授权更新版本记录迁移声明和两个文件哈希；新增3项静态测试。最终 Python 132/132 PASS (16.158s)，修改 Swift 文件 frontend parse PASS，preflight PASS。日志 TEST_REPORTS/R69-*。无 Apple SDK / Xcode 类型检查或真机；12pt 为源码布局目标，实际视觉间距、预览裁切/字号/小屏适配、系统日夜刷新、AirPlay 黑屏延迟仍待验证。Apple Security/CryptoKit smoke 未运行。没有对 GitHub 发起变更。下一步为累计候选审计、真机测试方案，正式构建须用户明确确认。

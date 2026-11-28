@@ -63,14 +63,14 @@ class ScreenProfilesTests(unittest.TestCase):
     def test_layout_profile_applied_without_mutating_protocol_defaults(self):
         ui=(ROOT/'App/ReceiverViewController.swift').read_text()
         branch=ui.split('receiver.prepareCarLife(configuration:',1)[1].split('self.startPreparedCarLife',1)[0]
-        for token in ('negotiated.rightHandDrive = savedLayout?.rightHandDrive', 'negotiated.dockPosition =', 'self.appearanceControl.selectedSegmentIndex = appearance', 'self.applyAppearance()'):
+        for token in ('negotiated.rightHandDrive = savedLayout?.rightHandDrive', 'negotiated.dockPosition =', 'self.applyAppearance()'):
             self.assertIn(token,branch)
         self.assertLess(branch.index('negotiated.dockPosition ='), branch.index('try negotiated.validate()'))
         self.assertLess(branch.index('self.localStartupID == startupID'), branch.index('let savedLayout ='))
         clear=ui.split('private func clearCarLifeProfileProjection()',1)[1].split('private func ',1)[0]
-        for token in ('appearanceControl.selectedSegmentIndex = index', 'driveControl.selectedSegmentIndex = index', 'carLifeProfileDock = nil', 'applyAppearance()'):
+        for token in ('driveControl.selectedSegmentIndex = index', 'carLifeProfileDock = nil', 'applyAppearance()'):
             self.assertIn(token,clear)
-        for method, token in [('appearanceChanged','carLifeProfileDefaultAppearance != nil'), ('driveChanged','carLifeProfileDefaultDrive != nil'), ('dockPositionPage','self.carLifeProfileDock != nil')]:
+        for method, token in [('driveChanged','carLifeProfileDefaultDrive != nil'), ('dockPositionPage','self.carLifeProfileDock != nil')]:
             body=ui.split('func '+method+'()',1)[1].split('private func ',1)[0]
             self.assertIn(token,body)
             self.assertIn('saveMatchedCarLifeLayout()',body)
@@ -81,17 +81,15 @@ class ScreenProfilesTests(unittest.TestCase):
         branch=ui.split('receiver.prepareCarLife(configuration:',1)[1].split('self.startPreparedCarLife',1)[0]
         for token in ('savedLayout?.carButton ?? self.carButtonSwitch.isOn', 'negotiated.oemIconPNG = nil', 'negotiated.oemIconPNG = self.customVehicleIcon ?? self.defaultVehicleIcon(appearanceIndex: savedLayout?.appearance)'):
             self.assertLess(branch.index(token), branch.index('try negotiated.validate()'))
-        self.assertIn('self.selectedSoundOutput = preferredSound', branch)
+        self.assertNotIn('selectedSoundOutput', branch)
         self.assertIn('self.carButtonSwitch.isOn = showVehicleButton', branch)
         self.assertIn('carLifeProfileDefaultCarButton ?? carButtonSwitch.isOn', ui)
-        self.assertIn('(carLifeProfileDefaultSound ?? selectedSoundOutput).rawValue', ui)
+        self.assertNotIn('carLifeProfileDefaultSound', ui)
         self.assertIn('carButtonSwitch.addTarget(self, action: #selector(rememberCarLifeResolution)', ui)
-        self.assertIn('soundOutput: selectedSoundOutput.rawValue, carButton: carButtonSwitch.isOn', ui)
-        sound=ui.split('private var soundOutput: SoundOutput {',1)[1].split('private let ',1)[0]
-        self.assertIn('if outputMode == .carLife || outputMode == .airPlay || outputMode.usesInstrumentWiFi { return .phone }',sound)
+        self.assertIn('carButton: carButtonSwitch.isOn', ui)
         self.assertNotIn('negotiated.audioEnabled =',branch)
         clear=ui.split('private func clearCarLifeProfileProjection()',1)[1].split('private func ',1)[0]
-        for token in ('selectedSoundOutput = sound', 'carButtonSwitch.isOn = enabled', 'carLifeProfileDefaultSound = nil', 'carLifeProfileDefaultCarButton = nil'):
+        for token in ('carButtonSwitch.isOn = enabled', 'carLifeProfileDefaultCarButton = nil'):
             self.assertIn(token,clear)
 
     def test_picture_ratio_profile_isolated_and_selected_before_encoder_reply(self):
@@ -102,7 +100,7 @@ class ScreenProfilesTests(unittest.TestCase):
         self.assertLess(select.index('fixedProfileSize'),select.index('return fixed'))
         self.assertLess(select.index('return fixed'),select.index('DerPlayCarLifeDisplay.size(width: width'))
         self.assertIn('evidence: .screenGeometry(width, height)',select)
-        page=ui.split('private func pictureRatioPage()',1)[1].split('fileprivate func ',1)[0]
+        page=ui.split('private func pictureRatioMenu()',1)[1].split('fileprivate func ',1)[0]
         scoped=page.split('if self.outputMode == .carLife',1)[1].split('self.sizeModeControl.selectedSegmentIndex',1)[0]
         self.assertIn('previous.replacingPicture(index: index',scoped)
         self.assertIn('store.save(next, scope: self.currentPreferenceScope, evidence: geometry)',scoped)
@@ -131,10 +129,12 @@ class ScreenProfilesTests(unittest.TestCase):
         self.assertIn('frameRateControl.selectedSegmentIndex = index',clear)
         self.assertIn('codecControl.selectedSegmentIndex = index',clear)
 
-    def test_missing_sound_uses_preference_not_effective_route(self):
+    def test_audio_capability_does_not_restore_legacy_sound_preference(self):
         ui=(ROOT/'App/ReceiverViewController.swift').read_text()
-        self.assertIn('let preferredSound = savedLayout?.soundOutput.flatMap(SoundOutput.init(rawValue:)) ?? self.selectedSoundOutput', ui)
-        self.assertIn('if outputMode == .carLife || outputMode == .airPlay || outputMode.usesInstrumentWiFi { return .phone }', ui)
+        self.assertNotIn('selectedSoundOutput', ui)
+        self.assertNotIn('savedLayout?.soundOutput', ui)
+        self.assertIn('audioEnabled: supportsCarPlayAudio(outputPort: outputPort)', ui)
+        self.assertIn('config.browserAudio = config.audioEnabled && config.videoOutputPort != nil && outputMode == .browser', ui)
 
     def test_invalid_snapshot_cannot_shadow_valid_history(self):
         policy=(ROOT/'DerPlay/Extensions/DeviceProfilePolicy.swift').read_text()

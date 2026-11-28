@@ -34,9 +34,10 @@ class CarLifeStartupTests(unittest.TestCase):
         for obsolete in ('adaptCarLifeScreen','carLifeRestartToken','carLifeAdaptations','carLifeReportedSize','onCarLifeDisplaySize'):
             self.assertNotIn(obsolete, self.ui+self.native)
         self.assertIn('guard running, outputMode != .carLife, reportedScreen != nil', self.ui)
-    def test_direction_is_carlife_only_and_persisted(self):
+    def test_direction_is_carlife_only_and_follows_report(self):
         self.assertNotIn('carLifeDirectionControl', self.ui)
-        self.assertIn('UserDefaults.standard.integer(forKey: "derPlayCarLifeDirection")', self.ui)
+        self.assertIn("private var carLifeDirection: DerPlayCarLifeDisplay.Direction { .automatic }", self.ui)
+        self.assertNotIn('UserDefaults.standard.integer(forKey: "derPlayCarLifeDirection")', self.ui)
         self.assertIn('evidence.report(raw: raw)', self.output)
         self.assertIn('area: area, direction: carLifeDirection', self.ui)
         self.assertIn('autoDisplayArea: area, direction: direction', self.native)

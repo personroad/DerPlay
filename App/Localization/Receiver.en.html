@@ -18,6 +18,7 @@ main{position:relative;width:100%;height:100%}video,canvas{position:absolute;ins
 .idle #top:not(:focus-within) :is(#status,#fast,#statsButton,#full){opacity:0;visibility:hidden}
 .fullscreen :is(#status,.actions,#stats,#startPlayback){display:none}
 .fullscreen #top{justify-content:flex-end}
+#geometryNotice{position:fixed;z-index:4;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:max-content;max-width:90%;text-align:center;pointer-events:none}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -27,6 +28,7 @@ main{position:relative;width:100%;height:100%}video,canvas{position:absolute;ins
   <button id="enableAudio" hidden>Enable Audio</button>
 </div></div>
 <div id="stats" class="badge" hidden></div>
+<div id="geometryNotice" class="badge" role="status" hidden>Screen and CarPlay aspect ratios differ. To fill the screen, select Auto Fit and restart CarPlay.</div>
 <button id="startPlayback" hidden>Start Playback</button>
 <script>
 /* This early check uses ES5 so even a restricted WebView can explain why playback cannot start. */
@@ -97,14 +99,32 @@ let audioGestureTimer=0;
 function audioPlaying(){return audioOffered&&audioContext&&audioContext.state==='running'}
 function canStartAudio(){return audioOffered&&shown&&(useWebCodecs||!video.paused)&&!document.hidden}
 let audioDropped=0;
-function requestAudio(){if(receiverReady)send({type:'audio',enabled:canStartAudio()&&audioPlaying()})}
-function clearAudio(){
- audioPackets=[];audioSchedule.clear();audioDropped=0;videoStamp=null;mseAudioClock.clear();
+let audioRequest=0,audioWanted=null,audioGranted=false;
+function wantsAudio(){return !!(receiverReady&&canStartAudio()&&audioPlaying())}
+function acceptsAudio(){return wantsAudio()&&audioGranted}
+function requestAudio(){
+ if(!receiverReady)return;
+ const wanted=wantsAudio();
+ if(wanted===audioWanted)return;
+ audioWanted=wanted;audioGranted=false;clearAudioPlayback();
+ send({type:'audio',enabled:wanted,request:++audioRequest});
+}
+function onAudioGrant(m){
+ if(m.request!==audioRequest||!receiverReady)return;
+ audioGranted=m.enabled===true&&wantsAudio()&&audioWanted===true;
+ if(!audioGranted)clearAudioPlayback();
+}
+function clearAudioPlayback(){
+ audioPackets=[];audioSchedule.clear();audioDropped=0;
  for(const source of activeAudio){try{source.stop()}catch(e){}}
  activeAudio.clear();
 }
+function clearAudio(){
+ clearAudioPlayback();videoStamp=null;mseAudioClock.clear();
+}
 function audioStateChanged(){
  clearTimeout(audioGestureTimer);audioGestureTimer=0;
+ if(!acceptsAudio())clearAudioPlayback();
  requestAudio();
  if(!canStartAudio()||!audioContext||audioPlaying()){
   enableAudio.hidden=true;
@@ -136,7 +156,7 @@ function packetTimestamp(u){
  return time.getUint32(0)*4294967296+time.getUint32(4);
 }
 function onAudioPacket(u){
- if(!audioPlaying()||u.length<17||document.hidden)return;
+ if(!acceptsAudio()||u.length<17)return;
  audioPackets.push({u,stamp:packetTimestamp(u),arrival:performance.now()/1000});
  if(audioPackets.length>180){audioPackets.shift();audioDropped++}
 }
@@ -169,7 +189,7 @@ function adjustAudioBuffer(state,packet,previous,underrun){
  }
 }
 function drainAudio(){
- if(!audioPlaying()||document.hidden)return;
+ if(!acceptsAudio())return;
  const clock=videoClock(),current=audioContext.currentTime;
  const pending=audioPackets;audioPackets=[];
  const deferred=new Set(),newest=new Map();
@@ -241,10 +261,12 @@ setInterval(drainAudio,20);
 
 // ---------- connection ----------
 function teardown(){
+ cancelFingers();
  clearTimeout(firstFrameTimer);
  if(ws){ws.onopen=ws.onmessage=ws.onclose=ws.onerror=null;try{ws.close()}catch(e){}ws=null}
  fmt=null;shown=false;receiverReady=false;clockOffset=null;bestRtt=Infinity;
- audioOffered=false;clearAudio();audioStateChanged();
+ $('#geometryNotice').hidden=true;
+ audioOffered=false;audioWanted=null;audioGranted=false;clearAudio();audioStateChanged();
  teardownMSE();teardownWC();
 }
 function restart(reason,notify=true){
@@ -286,6 +308,7 @@ function connect(){
  ws.onclose=()=>restart('Connection lost',false);ws.onerror=()=>{};
 }
 function onText(m){
+ if(m.type==='audioGrant'){onAudioGrant(m);return}
  if(m.type==='hello'){
   if(m.page!==PAGE_VERSION){location.reload();return}
   if(PERF[m.perf]){perfMode=m.perf;P=PERF[m.perf]}
@@ -310,6 +333,7 @@ function firstFrame(){
  if(shown)return;shown=true;attempt=0;hold.hidden=true;clearTimeout(firstFrameTimer);
  if(fmt)setStatus(`CarPlay ${fmt.width}×${fmt.height} · ${fmt.fps} · ${fmt.name} · ${connectionProtocol}`,'ok');wake();
  if(useWebCodecs)ensureAudioPlayback();
+ updateGeometryNotice();
 }
 function tryMSE(m,reason){
  if(!useWebCodecs||!canMSE||!MS.isTypeSupported('video/mp4; codecs="'+m.codec+'"'))return false;
@@ -364,10 +388,11 @@ function startDecoder(){
  decoder.configure(wcConfig);wcWaiting=true;submitted=[];
 }
 function draw(f){
- if(view.width!==f.displayWidth||view.height!==f.displayHeight){view.width=f.displayWidth;view.height=f.displayHeight}
+ const changed=view.width!==f.displayWidth||view.height!==f.displayHeight;
+ if(changed){cancelFingers();view.width=f.displayWidth;view.height=f.displayHeight}
  ctx.drawImage(f,0,0);videoStamp=f.timestamp;videoStampAt=performance.now();
  if(clockOffset!==null){const l=(nowUs()+clockOffset-f.timestamp)/1000;if(l>-50&&l<5000)latencies.push(l)}
- f.close();framesDrawn++;lastDrawAt=performance.now();firstFrame();
+ f.close();framesDrawn++;lastDrawAt=performance.now();firstFrame();if(changed)updateGeometryNotice();
 }
 function onPacketWC(u){
  if(u.length<10)return;
@@ -510,6 +535,7 @@ function afterUpdate(){
 }
 video.addEventListener('loadeddata',firstFrame);
 video.addEventListener('playing',()=>{startPlayback.hidden=true;firstFrame();ensureAudioPlayback()});
+video.addEventListener('pause',()=>{if(!useWebCodecs)audioStateChanged()});
 video.addEventListener('error',()=>{
  if(useWebCodecs||!media)return;
  const e=video.error,codec=fmt?fmt.name:'Video';
@@ -564,19 +590,35 @@ setInterval(()=>{
 },1000);
 
 // ---------- input ----------
-const fingers=new Map();let nextFingerId=0;
+const fingers=new Map();let nextFingerId=0,gesturePicture=null;
 function picture(){
+ if(!shown||!hold.hidden||document.hidden||!ws||ws.readyState!==1)return null;
  const el=useWebCodecs?view:video,r=el.getBoundingClientRect();
- const vw=(useWebCodecs?view.width:video.videoWidth)||16,vh=(useWebCodecs?view.height:video.videoHeight)||9;
- const s=Math.min(r.width/vw,r.height/vh),w=vw*s,h=vh*s;return{x0:r.left+(r.width-w)/2,y0:r.top+(r.height-h)/2,w,h}
+ const vw=useWebCodecs?view.width:video.videoWidth,vh=useWebCodecs?view.height:video.videoHeight;
+ if(![vw,vh,r.width,r.height].every(n=>Number.isFinite(n)&&n>0)||![r.left,r.top].every(Number.isFinite))return null;
+ const s=Math.min(r.width/vw,r.height/vh),w=vw*s,h=vh*s;
+ return{x0:r.left+(r.width-w)/2,y0:r.top+(r.height-h)/2,w,h,vw,vh};
+}
+function samePicture(a,b){return !!(a&&b&&a.vw===b.vw&&a.vh===b.vh&&['x0','y0','w','h'].every(k=>Math.abs(a[k]-b[k])<=0.5))}
+function insidePicture(p,x,y){return !!(p&&Number.isFinite(x)&&Number.isFinite(y)&&x>=p.x0&&x<=p.x0+p.w&&y>=p.y0&&y<=p.y0+p.h)}
+function cancelFingers(){
+ const active=fingers.size>0,ids=[...fingers.keys()];
+ fingers.forEach(f=>{if(f.dot)f.dot.remove()});fingers.clear();gesturePicture=null;
+ if(active)send({type:'touches',points:[]});
+ for(const id of ids){try{touchLayer.releasePointerCapture(id)}catch(_){}}
 }
 function sendFingers(){
- const p=picture(),points=[];
+ if(!fingers.size){gesturePicture=null;send({type:'touches',points:[]});return}
+ if(!samePicture(gesturePicture,picture())){cancelFingers();return}
+ const p=gesturePicture,points=[];
  for(const f of fingers.values())points.push({id:f.id,x:Math.max(0,Math.min(1,(f.cx-p.x0)/p.w)),y:Math.max(0,Math.min(1,(f.cy-p.y0)/p.h))});
  send({type:'touches',points});
 }
 touchLayer.addEventListener('pointerdown',e=>{
- if(fingers.size>=10)return;
+ const p=picture();
+ if(fingers.size&&!samePicture(gesturePicture,p)){cancelFingers();return}
+ if(fingers.size>=10||fingers.has(e.pointerId)||!insidePicture(p,e.clientX,e.clientY))return;
+ if(!fingers.size)gesturePicture=p;
  try{touchLayer.setPointerCapture(e.pointerId)}catch(_){}
  const f={id:nextFingerId,cx:e.clientX,cy:e.clientY,dot:null};nextFingerId=(nextFingerId+1)&255;
  if(showTouches){f.dot=document.createElement('div');f.dot.className='tp';document.body.appendChild(f.dot);moveDot(f)}
@@ -590,14 +632,13 @@ function lift(e){const f=fingers.get(e.pointerId);if(!f)return;if(f.dot)f.dot.re
 touchLayer.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('mousemove',wake);
 document.addEventListener('visibilitychange',()=>{
- if(document.hidden)clearAudio();
  ensureAudioPlayback();
- if(document.hidden&&fingers.size){fingers.forEach(f=>{if(f.dot)f.dot.remove()});fingers.clear();send({type:'touches',points:[]})}
+ if(document.hidden)cancelFingers()
  if(!document.hidden&&useWebCodecs&&decoder){wcWaiting=true;askKey('Page returned to foreground')}
 });
 $('#full').onclick=()=>{const d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen||(()=>{})).call(d)};
 function isFullscreen(){return !!(document.fullscreenElement||document.webkitFullscreenElement)}
-function fullscreenChanged(){document.body.classList.toggle('fullscreen',isFullscreen());wake()}
+function fullscreenChanged(){document.body.classList.toggle('fullscreen',isFullscreen());wake();clearTimeout(resizeTimer);resizeTimer=setTimeout(sendDisplay,300)}
 document.addEventListener('fullscreenchange',fullscreenChanged);
 document.addEventListener('webkitfullscreenchange',fullscreenChanged);
 $('#statsButton').onclick=()=>{statsEl.hidden=!statsEl.hidden;preference('localStorage','carplays.stats',statsEl.hidden?'0':'1')};
@@ -619,7 +660,26 @@ async function probeH265(){
  try{if(useWebCodecs&&typeof VideoDecoder.isConfigSupported==='function'){const r=await VideoDecoder.isConfigSupported({codec:c,hardwareAcceleration:'prefer-hardware'});if(r.supported)return true}}catch(e){}
  try{return !!(MS&&MS.isTypeSupported(`video/mp4; codecs="${c}"`))}catch(e){return false}
 }
+// A settled fullscreen viewport may differ from the negotiated video raster.
+// Keep contain rendering; never crop, stretch or issue an unverified View Area command.
+function geometryMismatch(w,h,vw,vh,sw,sh,full){
+ if(![w,h,vw,vh].every(n=>Number.isFinite(n)&&n>0))return false;
+ if(!full&&!(sw>0&&sh>0&&Math.abs(w-sw)<=sw*.03&&Math.abs(h-sh)<=sh*.03))return false;
+ const a=w*vh,b=h*vw;
+ return Math.abs(a-b)>Math.max(a,b)*.03;
+}
+function updateGeometryNotice(){
+ const vw=useWebCodecs?view.width:video.videoWidth,vh=useWebCodecs?view.height:video.videoHeight;
+ $('#geometryNotice').hidden=!(shown&&geometryMismatch(innerWidth,innerHeight,vw,vh,screen.width,screen.height,isFullscreen()));
+}
+video.addEventListener('resize',updateGeometryNotice);
+video.addEventListener('resize',()=>{if(fingers.size&&!samePicture(gesturePicture,picture()))cancelFingers()});
+window.addEventListener('resize',()=>{if(fingers.size&&!samePicture(gesturePicture,picture()))cancelFingers()});
+document.addEventListener('fullscreenchange',cancelFingers);
+document.addEventListener('webkitfullscreenchange',cancelFingers);
+window.addEventListener('blur',cancelFingers);
 function sendDisplay(){
+ updateGeometryNotice();
  if(!receiverReady||!ws||ws.readyState!==1||h265Ok===null)return;
  const dpr=window.devicePixelRatio||1;
  send({type:'display',w:Math.round(innerWidth*dpr),h:Math.round(innerHeight*dpr),dpr,

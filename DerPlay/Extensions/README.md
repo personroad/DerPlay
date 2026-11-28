@@ -135,3 +135,17 @@ Based on DerPlay-build8-declaration-checkpoint.zip. DiPlay local VIEW_AREAS.md a
 - 实际修改 DerPlay/Extensions/DeviceProfilePolicy.swift 和 Tools/derplay/DeviceProfilePolicySmoke.swift：支持 320...16384 的宽高，独立 screen-geometry-v1 命名空间，保留验证身份兼容路径并防止命名空间碰撞；同尺寸同协议共用记录，不同尺寸、方向、协议隔离。32 条存储上限不变。
 - 独立 Swift smoke 编译运行 PASS；76/76 Python 回归通过。当前仍为离线模块，未接入 App 运行时，未修改 UI 或底层协议。CarLife 当前完成回调返回协商输出尺寸而非原始上报；接入须在首次编码应答前获得原始报告。浏览器报告可能晚于首次出画，不能为匹配自动断开重连。下一步实现会话级配置保存与恢复，防止覆盖协议默认值。完整 Xcode 编译和真机未执行。
 - 正式版本元数据不变；R15 为接续检查点，非正式编译包。
+
+### R47 — 2026-11-26
+用户要求继续开发，AirPlay 继续暂停。R46 ZIP SHA256 验证通过。新增独立 NetworkIdentityGate 与 NetworkIdentitySmoke：仅当前 SSID 与预设精确一致、有地址、前台且未停止时允许进入后续恢复判断；未知 SSID 等待，其他 SSID 拒绝，SSID 不等于车机认证。CI 新增 R46/R47 两个 Swift smoke。现有 App 仅 wifi-info entitlement，未配置 Hotspot Configuration；现有启动监视可因地址变化重启，尚未接入新策略，不声称运行时修复。未修改 App、AirPlay、协议、权限或 Build 15 元数据。实际两个 Swift smoke、113 Python 回归、preflight 通过；macOS Apple Security/CryptoKit、Xcode、真机未执行。下一步设计会话绑定的异步 SSID 读取与取消机制，核验签名权限后才接入。
+
+
+### R50 — 2026-11-26
+用户要求继续开发。R49 ZIP SHA256 通过。新增 NetworkSessionProbe 与 NetworkSessionProbeSmoke，CI 加入独立测试。单执行器串行调用约束；每次请求独立 UUID，拒绝旧会话、重复、取消及后台迟到回调；完成时由调用方提供当前地址。尚无真实异步系统调用、超时定时器或运行时接入；不改变 App、AirPlay、MFi、权限及 Build 15。Swift 新 smoke、Python 117/117、preflight 实际通过；Apple SDK/Xcode/真机未执行。下一步接入受控网络采样及超时取消，验证后才允许自动恢复。
+
+### R51 — 2026-11-26
+用户要求继续开发。R50 ZIP SHA256 通过。首次运行时接入限定两轮车仪表本机 CarPlay 启动未出画阶段；其他模式保留旧监视。ReceiverViewController 使用 R46/R47/R50 策略、NEHotspotNetwork.fetchCurrent、主队列回调、2 秒单次超时、45 秒启动监视窗口、会话 UUID、后台 epoch 及手动停止取消。三次缺失地址后才允许三次身份匹配的稳定地址采样，最多两次启动重试；未知 SSID 不恢复，单纯 IP 变化不恢复。SSID 不等于车机认证。新增工程及生成器模块引用、两项静态集成测试；原运行方法哈希测试仅归一化明确新增的接入行，更新控制器授权锁。首次回归 117 项中两项旧方法哈希失败，调整明确接入例外后 119/119 通过；三个独立 Swift smoke、Swift parse、preflight 通过。Apple SDK 类型检查、Xcode、真机、实际 SSID 权限未验证；正常出画后的断线恢复、自动加入 Wi-Fi 尚未实现。AirPlay 暂停，其他协议及 Build 15 元数据不变，未上传。下一步优先真机验证启动恢复，再评估 Hotspot Configuration 权限及运行中恢复。
+
+
+### R52 — Wi-Fi 主动加入（2026-11-26）
+用户要求继续开发，AirPlay 暂停。R51 ZIP SHA256 通过。Wi-Fi 与网络页新增“连接此 Wi-Fi”显式入口，使用当前表单 SSID、开放网络或 WPA 密码，调用 NEHotspotConfigurationManager.apply，joinOnce=true；不自动启动 CarPlay、不自动重试、不在运行中调用；请求未结束时阻止启动，表单变化后忽略结果。系统请求无法由本地撤销；系统返回成功或 alreadyAssociated 也不代表已验证网络身份，提示用户确认后手动启动。新增可选签名文件 App/TDSCarKit-Hotspot.entitlements，默认签名设置不变；支持该权限的合法签名可设置 TDS_WIFI_ENTITLEMENTS=App/TDSCarKit-Hotspot.entitlements，LiveContainer 未验证，失败时手动连接。新增中英文提示和两项静态测试；首次 119 项有一项旧方法哈希失败，仅归一化新增启动守卫后 121/121 通过，Swift parse、preflight 通过。Apple SDK 类型检查、Xcode、真机未执行。自动启动前加入、运行中断线恢复尚未实现。Build 15 元数据不变，未上传。

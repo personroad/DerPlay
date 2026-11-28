@@ -26,5 +26,9 @@ class BuildWorkflowTests(unittest.TestCase):
         self.assertIn('CODE_SIGNING_ALLOWED=NO', self.workflow)
         self.assertIn('contents: read', self.workflow)
 
+    def test_display_geometry_smoke_is_in_ci(self):
+        self.assertIn('DerPlay/Extensions/DisplayGeometry.swift Tools/derplay/DisplayGeometrySmoke.swift', self.workflow)
+        self.assertIn('DisplayGeometrySmoke PASS', (ROOT / 'Tools/derplay/DisplayGeometrySmoke.swift').read_text())
+
 if __name__ == '__main__':
     unittest.main()

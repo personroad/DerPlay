@@ -14,6 +14,16 @@ final class NativeReceiver {
     private var localSkipping = false
     private let maximumLocalInFlight = 12
     private var localVideoEnabled = true
+    private let videoArrivalLock = NSLock()
+    private var videoArrivalUptime: TimeInterval?
+    /// Last authenticated media frame received, even when local preview decoding is suspended.
+    var lastVideoArrivalUptime: TimeInterval? {
+        videoArrivalLock.lock(); defer { videoArrivalLock.unlock() }
+        return videoArrivalUptime
+    }
+    private func recordVideoArrival() {
+        videoArrivalLock.lock(); videoArrivalUptime = ProcessInfo.processInfo.systemUptime; videoArrivalLock.unlock()
+    }
 
     func setLocalVideoEnabled(_ enabled: Bool) {
         queue.async { [weak self] in
@@ -55,6 +65,9 @@ final class NativeReceiver {
     private var generation = UUID()
     private var browserRegionRecommendation: Int?
     private var browserRegionViewer: UUID?
+    private var browserGeometryStartupPending = false
+    private var browserGeometryWaitingForFullscreenLogged = false
+    private var browserGeometryStartupTimeout: DispatchWorkItem?
     private var airPlayIdentity: AirPlayCredentials?
     private let videoOutput = VideoOutputServer()
     private let carLife = CarLifeOutput()
@@ -73,6 +86,9 @@ final class NativeReceiver {
     var onCarLinkState: ((String) -> Void)?
     /// Main thread: the primary browser's screen changed.
     var onBrowserDisplay: ((BrowserDisplay?, UUID?) -> Void)?
+    /// Main thread: the initial browser viewport has been applied to the first CarPlay /info response.
+    var onBrowserGeometryFailure: ((String) -> Void)?
+    var onBrowserGeometryResolved: ((Int, Int, Bool) -> Void)?
     /// Main thread: a browser keeps hitching.
     var onBrowserStruggling: ((String, String) -> Void)?
     /// Main thread: the CarPlay car button was tapped (requestUI).
@@ -136,8 +152,26 @@ final class NativeReceiver {
             self.videoOutput.onControl = { [weak self] in self?.press($0) }
             let displayGeneration = self.generation
             let displayProfile = configuration.dynamicDisplayProfile
+            self.browserGeometryStartupPending = configuration.browserAutoAdaptBeforeCarPlay
+            self.browserGeometryWaitingForFullscreenLogged = false
             let onDisplay: (BrowserDisplay?, UUID?) -> Void = { [weak self] display, viewerID in
                 DispatchQueue.main.async { browserDisplay?(display, viewerID) }
+                if let display, configuration.browserAutoAdaptBeforeCarPlay {
+                    self?.queue.async { [weak self] in
+                        guard let self, self.generation == displayGeneration,
+                              self.browserGeometryStartupPending else { return }
+                        guard self.browserDisplayFillsScreen(display) else {
+                            if !self.browserGeometryWaitingForFullscreenLogged {
+                                self.browserGeometryWaitingForFullscreenLogged = true
+                                self.log(CWL("接收页面尚未占满屏幕；请点全屏按钮后再协商 CarPlay 显示尺寸。"))
+                            }
+                            return
+                        }
+                        self.browserGeometryWaitingForFullscreenLogged = false
+                        self.finishBrowserGeometryStartup(display: display, configuration: configuration,
+                            identity: identity, onReady: listening, generation: displayGeneration)
+                    }
+                }
                 guard let displayProfile else { return }
                 self?.queue.async { [weak self] in
                     guard let self, self.generation == displayGeneration else { return }
@@ -243,9 +277,84 @@ final class NativeReceiver {
                 } catch { self.fail(CWL("无线音频编解码器不可用：{1}", [String(describing: error.localizedDescription)])); return }
             }
             self.log(CWL("请求 {1}×{2} @ {3} FPS，{4}；音频{5}", [String(describing: configuration.width), String(describing: configuration.height), String(describing: configuration.maxFPS), String(describing: configuration.videoCodec.displayName), String(describing: configuration.audioEnabled ? CWL("已启用（PCM/AAC/Opus）") : CWL("已关闭"))]))
-            self.listen(configuration: configuration, identity: identity, port: configuration.port, onReady: listening)
+            if configuration.browserAutoAdaptBeforeCarPlay {
+                let timeout = DispatchWorkItem { [weak self] in
+                    guard let self, self.generation == displayGeneration, self.browserGeometryStartupPending else { return }
+                    self.failBrowserGeometry(CWL("未获取有效屏幕尺寸，请重新启动并在接收设备打开全屏页面。"), generation: displayGeneration)
+                }
+                self.browserGeometryStartupTimeout = timeout
+                self.queue.asyncAfter(deadline: .now() + 45, execute: timeout)
+            } else if configuration.browserAudio {
+                // Fixed-size browser mode has no viewport gate. Wait for the actual
+                // HTTP/HTTPS listener before advertising CarPlay audio capability.
+                self.videoOutput.waitForBrowserListener { [weak self] ready in
+                    guard let self else { return }
+                    self.queue.async { [weak self] in
+                        guard let self, self.generation == displayGeneration else { return }
+                        guard ready else {
+                            self.fail("R187: browser audio sink listener not ready; CarPlay startup cancelled")
+                            return
+                        }
+                        self.log("R187: browser listener ready before CarPlay advertisement (not playback confirmation)")
+                        self.listen(configuration: configuration, identity: identity, port: configuration.port, onReady: listening)
+                    }
+                }
+            } else {
+                self.listen(configuration: configuration, identity: identity, port: configuration.port, onReady: listening)
+            }
         }
     }
+    private func browserDisplayFillsScreen(_ display: BrowserDisplay) -> Bool {
+        DisplayGeometry.fillsScreen(viewportWidth: display.width, viewportHeight: display.height,
+            screenWidth: display.screenWidth, screenHeight: display.screenHeight, fullscreen: display.fullscreen)
+    }
+
+    private func finishBrowserGeometryStartup(display: BrowserDisplay, configuration: ReceiverConfiguration,
+                                               identity: AccessoryIdentity, onReady: ((UInt16) -> Void)?,
+                                               generation expectedGeneration: UUID) {
+        guard browserGeometryStartupPending, generation == expectedGeneration else { return }
+        browserGeometryStartupPending = false
+        browserGeometryStartupTimeout?.cancel(); browserGeometryStartupTimeout = nil
+
+        // Use the actual tier candidates, not the provisional default raster.
+        let candidates = configuration.browserGeometryBounds
+        guard let fit = DisplayGeometry.fitPreservingRatio(ratioWidth: display.width, ratioHeight: display.height,
+                                                            landscapeBounds: candidates) else {
+            failBrowserGeometry(CWL("当前协议无法保持所选画面比例，请选择其他比例或连接模式。"), generation: expectedGeneration)
+            return
+        }
+        var resolved = configuration
+        resolved.width = fit.size.width; resolved.height = fit.size.height
+        let run = expectedGeneration
+        videoOutput.updateOutputSize(width: resolved.width, height: resolved.height) { [weak self] updated in
+            guard let self else { return }
+            self.queue.async {
+                guard self.generation == run else { return }
+                guard updated else {
+                    self.failBrowserGeometry(CWL("浏览器输出尺寸更新失败，请重新连接。"), generation: run)
+                    return
+                }
+                self.displaySize = (resolved.width, resolved.height)
+                self.log(CWL("已在 CarPlay 握手前识别接收屏幕 {1}×{2}，输出画面调整为 {3}×{4}。", [
+                    String(display.width), String(display.height), String(resolved.width), String(resolved.height)
+                ]))
+                let onResolved = self.onBrowserGeometryResolved
+                DispatchQueue.main.async {
+                    onResolved?(resolved.width, resolved.height, fit.adjustedForMinimumSide)
+                }
+                self.listen(configuration: resolved, identity: identity, port: resolved.port, onReady: onReady)
+            }
+        }
+    }
+
+    private func failBrowserGeometry(_ message: String, generation expectedGeneration: UUID) {
+        guard generation == expectedGeneration else { return }
+        let failure = onBrowserGeometryFailure
+        log(message)
+        stopOnQueue()
+        DispatchQueue.main.async { failure?(message) }
+    }
+
     private func listen(configuration: ReceiverConfiguration, identity: AccessoryIdentity, port: UInt16?, onReady: ((UInt16) -> Void)?) {
         let generation = self.generation
         do {
@@ -436,8 +545,11 @@ final class NativeReceiver {
         (try? AnnexB.units(in: accessUnit))?.contains { codec.isRandomAccess($0) } ?? false
     }
     private func stopOnQueue(preserveCarLife: Bool = false) {
+        videoArrivalLock.lock(); videoArrivalUptime = nil; videoArrivalLock.unlock()
         DispatchQueue.main.async { [weak self] in self?.discoveryService?.stop(); self?.discoveryService = nil }
         generation = UUID(); listener?.cancel(); listener = nil
+        browserGeometryStartupTimeout?.cancel(); browserGeometryStartupTimeout = nil
+        browserGeometryStartupPending = false; browserGeometryWaitingForFullscreenLogged = false
         browserRegionRecommendation = nil; browserRegionViewer = nil
         videoOutput.stop()
         if !preserveCarLife { carLife.stop() }
@@ -526,6 +638,7 @@ final class NativeReceiver {
             if state.media == nil {
                 let media = CarPlayMediaSession(queue: queue, secret: secret, peerAddress: state.peerAddress,
                                                 audioEnabled: configuration.audioEnabled, hevc: configuration.videoCodec == .h265,
+                                                mayLoopBackLocally: configuration.mayLoopBackLocally,
                                                 browserDisplayDiagnostics: configuration.browserOnlyOutput,
                                                 advertisedDisplayAreaCount: state.declaredDisplayAreaCount)
                 media.onLog = { [weak self] in self?.log($0) }
@@ -538,6 +651,7 @@ final class NativeReceiver {
                 let probeProfile = configuration.dynamicDisplayProfile
                 media.onVideo = { [weak self] data, codec in
                     guard let self else { return }
+                    self.recordVideoArrival()
                     #if DEBUG
                     let diagnosticArrival = ProcessInfo.processInfo.systemUptime
                     defer { self.recordPerformance(arrival: diagnosticArrival, bytes: data.count,
@@ -593,7 +707,13 @@ final class NativeReceiver {
                 }
                 state.media = media
             }
-            return RTSPResponse(body: try state.media!.setup(request.body), contentType: "application/x-apple-binary-plist")
+            do {
+                return RTSPResponse(body: try state.media!.setup(request.body), contentType: "application/x-apple-binary-plist")
+            } catch CarPlayMediaSession.SetupRejection.invalidMicrophone {
+                // Authentication has already passed; only the media session can issue this narrow rejection.
+                log("R185: audio renegotiation rejected; preserving committed media and control channel")
+                return RTSPResponse(status: 400, reason: "Bad Request")
+            }
         case ("RECORD", _):
             guard state.media != nil else { throw ProtocolError.malformed(CWL("在 SETUP 前收到 RECORD")) }
             state.media?.noteRecord()
@@ -615,6 +735,9 @@ final class NativeReceiver {
         case ("GET", "/info"), ("POST", "/info"):
             let info = CarPlayInfo.build(configuration)
             let body = try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
+            let audioFormats = info["audioFormats"] as? [[String: Any]] ?? []
+            let audioLatencies = info["audioLatencies"] as? [[String: Any]] ?? []
+            log("R167: /info audioEnabled=\(configuration.audioEnabled), browserSink=\(configuration.browserAudio), formats=\(audioFormats.count), latencies=\(audioLatencies.count)")
             let displays = info["displays"] as? [[String: Any]]
             let count = (displays?.first?["viewAreas"] as? [[String: Any]])?.count ?? 1
             if let profile = configuration.dynamicDisplayProfile {

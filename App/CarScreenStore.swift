@@ -10,6 +10,10 @@ struct CarScreen: Codable, Equatable {
     var lastUsed: Date
     var profileKey: String?
     var iconWidthMM: Int?
+    /// Full physical screen in device pixels, distinct from the browser's usable viewport.
+    /// Optional for backward-compatible decoding of older screen records.
+    var nativeWidth: Int? = nil
+    var nativeHeight: Int? = nil
     var key: String { profileKey ?? "\(width)x\(height)" }
     var title: String { "\(width) × \(height)\(refreshHz > 0 ? " · \(refreshHz) Hz" : "")" }
     var subtitle: String {
@@ -59,7 +63,8 @@ enum CarScreenStore {
         let existing = listBeforeUpdate.first { $0.key == (profileKey ?? legacyKey) } ?? legacy
         let screen = CarScreen(width: display.width, height: display.height, devicePixelRatio: display.devicePixelRatio,
                                refreshHz: display.refreshHz, supportsH265: display.supportsH265, lastUsed: Date(),
-                               profileKey: profileKey, iconWidthMM: existing?.iconWidthMM)
+                               profileKey: profileKey, iconWidthMM: existing?.iconWidthMM,
+                               nativeWidth: display.screenWidth, nativeHeight: display.screenHeight)
         var list = listBeforeUpdate.filter { $0.key != screen.key && $0.key != legacy?.key }
         list.insert(screen, at: 0)
         save(Array(list.prefix(maximum)))

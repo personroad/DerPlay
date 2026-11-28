@@ -1,0 +1,18 @@
+--- a/App/BackgroundKeepAlive.swift
++++ b/App/BackgroundKeepAlive.swift
+@@ -33,7 +33,14 @@
+     func start() -> Bool {
+         guard !isRunning else { return true }
+         Self.setHolding(true)
+-        guard play(reason: nil) else { Self.setHolding(false); return false }
++        guard play(reason: nil) else {
++            // Release our claim before asking the shared owner to clean up.
++            player?.stop()
++            player = nil
++            Self.setHolding(false)
++            CarPlayAudio.endMediaSession()
++            return false
++        }
+         recovery.start()
+         generation = UUID()
+         let token = generation

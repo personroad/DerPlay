@@ -4,15 +4,15 @@ import Foundation
 /// The wire negotiation still advertises the actual source dimensions.
 enum DerPlayCarLifeDisplay {
     // The wire report contains dimensions, not a trustworthy orientation or viewport.
-    // Default preserves compatibility with receivers reporting natural portrait dimensions.
+    // Automatic uses the reported axis order, without guessing the physical viewport.
     enum Direction: Int {
         case automatic = 0, reported, landscape, portrait
 
         func reference(width: Int, height: Int) -> (width: Int, height: Int) {
             switch self {
-            case .reported: return (width, height)
+            case .automatic, .reported: return (width, height)
             case .portrait: return (min(width, height), max(width, height))
-            case .automatic, .landscape: return (max(width, height), min(width, height))
+            case .landscape: return (max(width, height), min(width, height))
             }
         }
     }
@@ -30,7 +30,7 @@ enum DerPlayCarLifeDisplay {
         let maxHeight = min(Double(reference.height), 1080, 1920 / aspect,
                             (Double(area) / aspect).squareRoot())
         let h = Int(maxHeight / 2) * 2
-        let w = Int(Double(h) * aspect / 2) * 2
+        let w = alignedWidth(height: h, aspect: aspect, area: area)
         guard h >= 320, w >= 320, w <= 1920, h <= 1080 else { return nil }
         return (w, h)
     }
@@ -42,9 +42,18 @@ enum DerPlayCarLifeDisplay {
         let aspect = Double(ratioWidth) / Double(ratioHeight)
         let maxHeight = min(1080.0, 1920 / aspect, (Double(area) / aspect).squareRoot())
         let h = Int(maxHeight / 2) * 2
-        let w = Int(Double(h) * aspect / 2) * 2
+        let w = alignedWidth(height: h, aspect: aspect, area: area)
         guard (320...1920).contains(w), (320...1080).contains(h), w * h <= area else { return nil }
         return (w, h)
+    }
+
+    // Round to the nearest even width where the pixel budget permits. Flooring
+    // both axes can reject a valid minimum-edge raster (e.g. 320×321).
+    private static func alignedWidth(height: Int, aspect: Double, area: Int) -> Int {
+        guard height > 0 else { return 0 }
+        let maximum = min(1920, area / height) / 2 * 2
+        let nearest = Int((Double(height) * aspect / 2).rounded()) * 2
+        return min(maximum, nearest)
     }
 
     /// Single startup raster. A new report cannot change an already advertised source.
@@ -61,7 +70,9 @@ enum DerPlayCarLifeDisplay {
 
         /// Called only after queuing the encoder reply. Only the first success starts CarPlay.
         mutating func commit(width: Int, height: Int) -> Bool {
-            guard raster == nil else { return false }
+            guard raster == nil, (320...1920).contains(width),
+                  (320...1080).contains(height), width.isMultiple(of: 2),
+                  height.isMultiple(of: 2) else { return false }
             raster = (width, height)
             return true
         }

@@ -20,6 +20,7 @@ struct BrowserDisplay: Equatable {
         CarScreenStore.setIconWidth(120, for: b.key)
         let current = CarScreenStore.recordCurrent(BrowserDisplay(width: 1282, height: 1212, screenWidth: 1282, screenHeight: 1212, devicePixelRatio: 1, refreshHz: 30, supportsH265: false, fullscreen: false, peer: "different-viewer"))
         assert(current.iconWidthMM == nil && current.refreshHz == 30 && !current.supportsH265)
+        assert(current.nativeWidth == 1282 && current.nativeHeight == 1212)
         assert(CarScreenStore.preferred()?.iconWidthMM == 120)
         let before = CarScreenStore.screens()
         let c = CarScreen(width: 526, height: 1080, devicePixelRatio: 1, refreshHz: 30, supportsH265: false, lastUsed: Date(), profileKey: nil, iconWidthMM: nil)
@@ -28,6 +29,9 @@ struct BrowserDisplay: Equatable {
         assert(CarScreenStore.screens() == before && CarScreenStore.preferred()?.iconWidthMM == 120)
         CarScreenStore.clearCarLifeNegotiation()
         assert(CarScreenStore.lastCarLifeNegotiation() == nil && CarScreenStore.screens() == before && CarScreenStore.defaultKeyValue == b.key)
-        print("CarLife history and browser preferences isolated; record, read, clear passed")
+        let legacy = "{\"width\":900,\"height\":1900,\"devicePixelRatio\":1,\"refreshHz\":30,\"supportsH265\":false,\"lastUsed\":0}"
+        let legacyScreen = try! JSONDecoder().decode(CarScreen.self, from: Data(legacy.utf8))
+        assert(legacyScreen.nativeWidth == nil && legacyScreen.nativeHeight == nil)
+        print("CarLife history and browser preferences isolated; native viewport ratio persisted; legacy screen decode passed")
     }
 }

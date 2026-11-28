@@ -37,7 +37,8 @@ class BrowserSessionIsolationTests(unittest.TestCase):
     def test_callbacks_capture_startup_identity(self):
         ui=(ROOT/'App/ReceiverViewController.swift').read_text()
         start=ui.split('localStartupID = startupID',1)[1].split('prepareExternalOutput(configuration: config)',1)[0]
-        self.assertEqual(start.count('self.localStartupID == startupID'),2)
+        self.assertEqual(start.count('self.localStartupID == startupID'),4)
+        self.assertIn('receiver.onBrowserGeometryFailure =',start)
         self.assertIn('self.running, self.outputMode == .browser',start)
         stop=ui.split('private func stop() {',1)[1]
         self.assertTrue(stop.lstrip().startswith('localStartupID = nil'))

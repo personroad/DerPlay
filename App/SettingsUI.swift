@@ -6,13 +6,31 @@ final class ChoiceMenu: UIControl {
     private var items: [String]
     private var disabledItems = Set<Int>()
     private let button = UIButton(type: .system)
-    var selectedSegmentIndex: Int = 0 { didSet { refresh() } }
+    var selectedSegmentIndex: Int = 0 { didSet { if selectedSegmentIndex != oldValue { refresh() } } }
     var numberOfSegments: Int { items.count }
     var selectedTitle: String { items.indices.contains(selectedSegmentIndex) ? items[selectedSegmentIndex] : "" }
 
-    init(items: [String]) {
+    init(items: [String], fixedOrder: Bool = false) {
         self.items = items
         super.init(frame: .zero)
+        applyMaterial()
+        NotificationCenter.default.addObserver(self, selector: #selector(transparencyChanged), name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
+        button.titleLabel?.numberOfLines = 1
+        button.showsMenuAsPrimaryAction = true
+        // Keep explicitly ordered menus (PiP) top-to-bottom, regardless of the popover direction.
+        if fixedOrder { button.preferredMenuElementOrder = .fixed }
+        button.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(button)
+        NSLayoutConstraint.activate([button.leadingAnchor.constraint(equalTo: leadingAnchor), button.trailingAnchor.constraint(equalTo: trailingAnchor),
+                                     button.topAnchor.constraint(equalTo: topAnchor), button.bottomAnchor.constraint(equalTo: bottomAnchor)])
+        refresh()
+    }
+    @objc private func transparencyChanged() {
+        applyMaterial()
+        invalidateIntrinsicContentSize()
+        if let superview { frame.size = intrinsicContentSize; superview.setNeedsLayout() }
+    }
+    private func applyMaterial() {
         var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: "chevron.up.chevron.down",
                                       withConfiguration: UIImage.SymbolConfiguration(textStyle: .footnote, scale: .small))
@@ -20,20 +38,23 @@ final class ChoiceMenu: UIControl {
         configuration.titleLineBreakMode = .byTruncatingTail
         configuration.baseForegroundColor = .secondaryLabel
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 0)
+        configuration.title = selectedTitle
         button.configuration = configuration
-        button.titleLabel?.numberOfLines = 1
-        button.showsMenuAsPrimaryAction = true
-        button.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(button)
-        NSLayoutConstraint.activate([button.leadingAnchor.constraint(equalTo: leadingAnchor), button.trailingAnchor.constraint(equalTo: trailingAnchor),
-                                     button.topAnchor.constraint(equalTo: topAnchor), button.bottomAnchor.constraint(equalTo: bottomAnchor)])
-        refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func setTitle(_ title: String?, forSegmentAt index: Int) {
         guard items.indices.contains(index) else { return }
         items[index] = title ?? ""; refresh()
+    }
+    /// Replace a discovered option list while preserving the selected title when possible.
+    func replaceItems(_ nextItems: [String], preservingSelection: Bool = true) {
+        let previous = selectedTitle
+        guard !nextItems.isEmpty else { return }
+        items = nextItems
+        disabledItems = disabledItems.filter { items.indices.contains($0) }
+        selectedSegmentIndex = preservingSelection ? (items.firstIndex(of: previous) ?? 0) : 0
+        refresh()
     }
     func setEnabled(_ enabled: Bool, forSegmentAt index: Int) {
         if enabled { disabledItems.remove(index) } else { disabledItems.insert(index) }
@@ -57,7 +78,8 @@ final class ChoiceMenu: UIControl {
         button.menu = UIMenu(children: items.enumerated().map { index, title in
             UIAction(title: title, attributes: disabledItems.contains(index) ? .disabled : [],
                      state: index == selectedSegmentIndex ? .on : .off) { [weak self] _ in
-                guard let self, self.selectedSegmentIndex != index else { return }
+                guard let self, self.isEnabled, self.items.indices.contains(index),
+                      !self.disabledItems.contains(index), self.selectedSegmentIndex != index else { return }
                 self.selectedSegmentIndex = index
                 self.sendActions(for: .valueChanged)
             }
@@ -121,23 +143,10 @@ enum SettingsIcon {
             cache[key] = image
             return image
         }
-        // Resolve dynamic colors before rendering/caching. Darken light tiles so
-        // the white glyph remains legible, including after an appearance change.
+        // Preserve the approved bright system palette in every settings tile.
+        // Resolve against the active appearance before rendering and caching.
         let resolved = color.resolvedColor(with: traits)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        let fill: UIColor
-        if resolved.getRed(&r, green: &g, blue: &b, alpha: &a) {
-            func linear(_ value: CGFloat) -> CGFloat {
-                value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
-            }
-            var scale: CGFloat = 1
-            while 0.2126 * linear(r * scale) + 0.7152 * linear(g * scale) + 0.0722 * linear(b * scale) > 0.18 {
-                scale *= 0.95
-            }
-            fill = UIColor(red: r * scale, green: g * scale, blue: b * scale, alpha: 1)
-        } else {
-            fill = UIColor(white: 0.42, alpha: 1)
-        }
+        let fill = resolved
         let key = "\(symbol)|\(fill.description)|\(traits.displayScale)"
         if let cached = cache[key] { return cached }
         let size = CGSize(width: 32, height: 32)
@@ -180,6 +189,14 @@ struct SettingsRow {
     var checked: (() -> Bool)?
     var onDelete: (() -> Void)?
     var subtitle: (() -> String?)?
+    var enabled: (() -> Bool)?
+    var isEnabled: Bool { enabled?() ?? true }
+
+    func enabledWhen(_ predicate: @escaping () -> Bool) -> Self {
+        var row = self
+        row.enabled = predicate
+        return row
+    }
 
     static func page(_ title: String, icon: (String, UIColor)? = nil, detail: (() -> String?)? = nil, _ make: @escaping () -> UIViewController) -> Self {
         SettingsRow(title: title, icon: icon, detail: detail, kind: .page(make))
@@ -196,6 +213,9 @@ struct SettingsRow {
     }
     static func view(_ view: UIView) -> Self { SettingsRow(title: "", kind: .view(view)) }
     static func info(_ title: String, _ value: String, icon: (String, UIColor)? = nil) -> Self { SettingsRow(title: title, icon: icon, detail: { value }, kind: .info) }
+    static func info(_ title: String, icon: (String, UIColor)? = nil, detail: @escaping () -> String?) -> Self {
+        SettingsRow(title: title, icon: icon, detail: detail, kind: .info)
+    }
 
     static func guide(_ title: String, icon: (String, UIColor), _ description: String) -> Self {
         SettingsRow(title: title, icon: icon, kind: .info, subtitle: { description })
@@ -207,6 +227,12 @@ struct SettingsRow {
         label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
         field.borderStyle = .none; field.textAlignment = .right; field.clearButtonMode = .whileEditing
+        // Keep the input inline to avoid squeezing long addresses on compact screens.
+        if !field.constraints.contains(where: { $0.identifier == "DerPlayInlineFieldMinimumHeight" }) {
+            let minimumHeight = field.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+            minimumHeight.identifier = "DerPlayInlineFieldMinimumHeight"
+            minimumHeight.isActive = true
+        }
         field.autocorrectionType = .no; field.autocapitalizationType = .none
         field.smartQuotesType = .no; field.smartDashesType = .no; field.spellCheckingType = .no
         field.accessibilityLabel = title
@@ -242,29 +268,78 @@ struct SettingsSection {
 }
 
 /// One settings page. Sections are rebuilt each time the page appears, so details stay current.
-final class SettingsPageController: UITableViewController {
+final class SettingsPageController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private(set) var tableView: UITableView!
+    private let pageSubtitle: String?
+    private let firstCardTopSpacing: CGFloat?
     private let build: () -> [SettingsSection]
     private var sections: [SettingsSection] = []
     private var cells: [IndexPath: UITableViewCell] = [:]
     private var reloadPending = false
     private var layoutPending = false
+    var runtimeEditingLocked: (() -> Bool)?
     var onAppear: (() -> Void)?
     var onLeave: (() -> Void)?
 
-    init(title: String, build: @escaping () -> [SettingsSection]) {
+    init(title: String, subtitle: String? = nil, firstCardTopSpacing: CGFloat? = nil, build: @escaping () -> [SettingsSection]) {
         self.build = build
-        super.init(style: .insetGrouped)
+        self.pageSubtitle = subtitle
+        self.firstCardTopSpacing = firstCardTopSpacing
+        super.init(nibName: nil, bundle: nil)
         self.title = title
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView = UITableView(frame: .zero, style: .insetGrouped)
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tableView)
+        let safe = view.safeAreaLayoutGuide
+        var contentTop = safe.topAnchor
+        if let subtitle = pageSubtitle {
+            // Fixed sibling of the scrolling list, never a table header.
+            let note = UILabel()
+            note.text = subtitle
+            note.font = .systemFont(ofSize: 12)
+            note.textColor = .secondaryLabel
+            note.textAlignment = .center
+            note.adjustsFontSizeToFitWidth = true
+            note.minimumScaleFactor = 0.8
+            note.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(note)
+            NSLayoutConstraint.activate([
+                note.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+                note.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+                note.topAnchor.constraint(equalTo: safe.topAnchor)
+            ])
+            contentTop = note.bottomAnchor
+            tableView.sectionHeaderTopPadding = 0
+        }
+        if firstCardTopSpacing != nil { tableView.sectionHeaderTopPadding = 0 }
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: contentTop, constant: pageSubtitle == nil ? 0 : 20),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
         tableView.keyboardDismissMode = .interactive
         navigationItem.largeTitleDisplayMode = .never
         applyGlassSurface()
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshCardMaterial), name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(statusChanged(_:)), name: StatusLabel.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(editingEnded(_:)), name: UITextField.textDidEndEditingNotification, object: nil)
+    }
+    private var settingsCardColor: UIColor {
+        if UIAccessibility.isReduceTransparencyEnabled { return .secondarySystemGroupedBackground }
+        return DerPlayGlassPalette.card
+    }
+    @objc private func refreshCardMaterial() {
+        guard isViewLoaded, navigationController is DerPlayGlassNavigationController else { return }
+        // Update existing cells without reparenting editing fields.
+        for cell in cells.values { cell.backgroundColor = settingsCardColor }
     }
     private func applyGlassSurface() {
         if navigationController is DerPlayGlassNavigationController {
@@ -284,6 +359,7 @@ final class SettingsPageController: UITableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         applyGlassSurface()
+        refreshCardMaterial()
         reload()
         onAppear?()
     }
@@ -300,6 +376,11 @@ final class SettingsPageController: UITableViewController {
         guard !containsEditingField(tableView) else { reloadPending = true; return }
         reloadPending = false
         sections = build(); cells.removeAll()
+        if sections.contains(where: { $0.centered }) {
+            tableView.sectionHeaderTopPadding = 0
+            tableView.estimatedSectionHeaderHeight = 0
+            tableView.estimatedSectionFooterHeight = 0
+        }
         tableView.reloadData()
     }
     private func containsEditingField(_ view: UIView) -> Bool {
@@ -319,10 +400,9 @@ final class SettingsPageController: UITableViewController {
         }
     }
     func refreshDetails() {
-        for indexPath in tableView.indexPathsForVisibleRows ?? [] {
+        for (indexPath, cell) in cells {
             let row = sections[indexPath.section].rows[indexPath.row]
             guard let detail = row.subtitle ?? row.detail,
-                  let cell = tableView.cellForRow(at: indexPath),
                   var content = cell.contentConfiguration as? UIListContentConfiguration else { continue }
             content.secondaryText = detail()
             cell.contentConfiguration = content
@@ -334,55 +414,57 @@ final class SettingsPageController: UITableViewController {
         UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { sections.count }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].rows.count }
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { sections[section].header }
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { sections[section].footer }
+    func numberOfSections(in tableView: UITableView) -> Int { sections.count }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { sections[section].rows.count }
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { sections[section].header }
+    func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { sections[section].footer }
 
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        sections[section].centered ? 46 : UITableView.automaticDimension
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        if section == 0, sections[section].header == nil, let spacing = firstCardTopSpacing { return spacing }
+        if section == 0, pageSubtitle != nil, sections[section].header == nil { return .leastNormalMagnitude }
+        return sections[section].centered ? UIFont.systemFont(ofSize: 15, weight: .medium).lineHeight + 24 : UITableView.automaticDimension
     }
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         guard sections[section].centered, let title = sections[section].header else { return nil }
         let container = UIView()
         let label = UILabel()
         label.text = title
         label.textColor = .secondaryLabel
-        label.font = .preferredFont(forTextStyle: .footnote)
+        label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             label.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
         return container
     }
-    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        if sections[section].footer == nil, sections.indices.contains(section + 1), sections[section + 1].centered { return .leastNormalMagnitude }
+    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        if sections[section].footer == nil, sections.indices.contains(section + 1), sections[section + 1].centered { return 0.01 }
         return UITableView.automaticDimension
     }
 
-    override func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+    func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
         if sections[section].centered, let header = view as? UITableViewHeaderFooterView {
             header.textLabel?.textAlignment = .center
         }
     }
-    override func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
+    func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
         if sections[section].centered, let footer = view as? UITableViewHeaderFooterView {
             footer.textLabel?.textAlignment = .center
         }
     }
 
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if let cell = cells[indexPath] { return cell }
         // Controls are shared objects owned by the main screen, so cells are never reused.
         let row = sections[indexPath.section].rows[indexPath.row]
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         if navigationController is DerPlayGlassNavigationController {
-            cell.backgroundColor = DerPlayGlassPalette.card
+            cell.backgroundColor = settingsCardColor
         }
         if case .view(let custom) = row.kind {
             custom.removeFromSuperview()
@@ -427,17 +509,76 @@ final class SettingsPageController: UITableViewController {
                 break
             }
             if let checked = row.checked { cell.accessoryType = checked() ? .checkmark : .none }
+            if !row.isEnabled {
+                content.secondaryTextProperties.color = .tertiaryLabel
+                cell.selectionStyle = .none
+                if case .page = row.kind {
+                    cell.accessoryType = .none
+                    let indicator = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)))
+                    indicator.tintColor = .tertiaryLabel
+                    indicator.sizeToFit()
+                    cell.accessoryView = indicator
+                }
+                cell.accessibilityTraits.insert(.notEnabled)
+            }
             cell.contentConfiguration = content
+        }
+        // Disabled controls keep their native appearance; the cell receives the explanatory tap.
+        if runtimeEditingLocked?() == true, hasLockedControl(row) {
+            cell.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(lockedControlTapped(_:))))
         }
         cells[indexPath] = cell
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    private func hasLockedControl(_ row: SettingsRow) -> Bool {
+        switch row.kind {
+        case .control(let view): return (view as? UIControl)?.isEnabled == false
+        case .view(let view):
+            // Inline text fields are embedded in a stack; don't intercept unrelated custom views.
+            guard let stack = view as? UIStackView else { return false }
+            return stack.arrangedSubviews.contains { ($0 as? UITextField)?.isEnabled == false }
+        default: return false
+        }
+    }
+
+    @objc private func lockedControlTapped(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended, runtimeEditingLocked?() == true,
+              let cell = gesture.view as? UITableViewCell,
+              let indexPath = tableView.indexPath(for: cell),
+              hasLockedControl(sections[indexPath.section].rows[indexPath.row]) else { return }
+        showRuntimeEditingNotice()
+    }
+
+    private func showRuntimeEditingNotice() {
+        guard runtimeEditingLocked?() == true, viewIfLoaded?.window != nil,
+              navigationController?.topViewController === self,
+              presentedViewController == nil, navigationController?.presentedViewController == nil else { return }
+        let notice = UIAlertController(title: CWL("请停止 CarPlay 后再修改"), message: nil, preferredStyle: .alert)
+        notice.addAction(UIAlertAction(title: CWL("好"), style: .default))
+        present(notice, animated: true)
+    }
+
+    func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        let row = sections[indexPath.section].rows[indexPath.row]
+        if !row.isEnabled {
+            // Read-only information is never editable and should not imply otherwise.
+            switch row.kind {
+            case .action, .page: showRuntimeEditingNotice()
+            default: break
+            }
+        }
+        return sections[indexPath.section].rows[indexPath.row].isEnabled ? indexPath : nil
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let row = sections[indexPath.section].rows[indexPath.row]
+        guard row.isEnabled else { return }
         switch row.kind {
         case .page(let make):
+            guard let navigation = navigationController, navigation.topViewController === self,
+                  navigation.transitionCoordinator == nil else { return }
             view.endEditing(true)
             navigationController?.pushViewController(make(), animated: true)
         case .action(let run):
@@ -448,7 +589,7 @@ final class SettingsPageController: UITableViewController {
         }
     }
 
-    override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard let delete = sections[indexPath.section].rows[indexPath.row].onDelete else { return nil }
         let configuration = UISwipeActionsConfiguration(actions: [UIContextualAction(style: .destructive, title: CWL("删除")) { [weak self] _, _, done in
             guard let self else { done(false); return }

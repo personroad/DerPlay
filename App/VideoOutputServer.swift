@@ -23,7 +23,7 @@ enum BrowserPerformance: String, CaseIterable {
 /// Serves a browser-based CarPlay view over HTTP and WebSocket to several LAN devices at once.
 /// It also keeps /video.h264 (raw Annex-B, whichever codec CarPlay sends) for diagnostic clients.
 final class VideoOutputServer {
-    private enum Mode { case request, raw, webSocket }
+    private enum Mode { case request, raw, webSocket, airPlayResponse }
     private final class Client {
         let id = UUID()
         let connection: NWConnection
@@ -49,6 +49,8 @@ final class VideoOutputServer {
         /// WebCodecs viewers get raw AVCC/HVCC samples instead of fMP4 fragments.
         var webCodecs = false
         var wantsAudio = false
+        var audioRequest: Int?
+        var audioGranted = false
         var usesAudioClock = false
         let secure: Bool
         init(connection: NWConnection, secure: Bool) {
@@ -107,14 +109,16 @@ final class VideoOutputServer {
     private var performance: BrowserPerformance = .auto
     private var showTouches = false
     private var browserAudio = false
+    // Listener state is confined to the server queue. HTTP and HTTPS can become ready independently.
+    private var readyBrowserListeners = Set<Bool>() // false: HTTP, true: HTTPS
+    private var browserListenerWaiter: (id: UUID, completion: (Bool) -> Void)?
     private var hls: CarPlayHLS?
     private var hlsKeyframeTimer: DispatchSourceTimer?
-    #if DEBUG
+    private var lastHLSDiagnosticsAt: UInt64?
     private var airPlayRequestDiagnostics = Set<String>()
-    #endif
     var onAirPlayReady: ((UUID) -> Void)?
 
-    private var viewerCount: Int { clients.values.filter { $0.mode != .request }.count }
+    private var viewerCount: Int { clients.values.filter { $0.mode == .raw || $0.mode == .webSocket }.count }
     private static func nowUs() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
 
     func start(port: UInt16, securePort: UInt16? = nil, width: Int, height: Int, fps: Int,
@@ -128,6 +132,31 @@ final class VideoOutputServer {
                                preferredViewer: preferredViewer, browserAudio: browserAudio, airPlayStreamID: airPlayStreamID,
                                airPlayAddress: airPlayAddress, onDisplay: onDisplay, onStruggling: onStruggling)
         }
+    }
+
+    /// A fixed-size browser session must not advertise a usable audio sink before
+    /// at least one browser listener is ready. Called after start() on the same queue.
+    func waitForBrowserListener(timeout: TimeInterval = 8, completion: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if !self.readyBrowserListeners.isEmpty { completion(true); return }
+            guard self.browserListenerWaiter == nil else { completion(false); return }
+            let run = self.generation
+            let ticket = UUID()
+            self.browserListenerWaiter = (ticket, completion)
+            self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                guard let self, self.generation == run, let waiter = self.browserListenerWaiter, waiter.id == ticket else { return }
+                self.browserListenerWaiter = nil
+                waiter.completion(false)
+            }
+        }
+    }
+
+    private func markBrowserListenerReady(secure: Bool) {
+        readyBrowserListeners.insert(secure)
+        guard let waiter = browserListenerWaiter else { return }
+        browserListenerWaiter = nil
+        waiter.completion(true)
     }
 
     func append(_ accessUnit: Data, codec: VideoCodec) {
@@ -159,10 +188,27 @@ final class VideoOutputServer {
             guard let self, self.browserAudio else { return }
             // Video can wait for the next keyframe while the same connection still has
             // capacity for audio. Only the actual socket backlog limits audio writes.
-            for client in Array(self.clients.values) where client.wantsAudio && client.streamStarted
-                && client.pendingBytes < self.skipPendingBytes {
-                self.sendWebSocket(wire, opcode: 2, to: client)
+            // CarPlay audio belongs to the current primary receiving screen, not every
+            // open browser tab. Never fall back to an unrelated viewer when it is unavailable.
+            guard let id = self.primaryBrowser, let client = self.clients[id],
+                  client.browserReady, client.usesAudioClock, client.wantsAudio, client.audioGranted,
+                  client.streamStarted, client.pendingBytes < self.skipPendingBytes else { return }
+            self.sendWebSocket(wire, opcode: 2, to: client)
+        }
+    }
+
+    /// Update the MP4 display dimensions before the first CarPlay frame is received.
+    /// Existing connected browser pages remain attached and wait for the stream format.
+    func updateOutputSize(width: Int, height: Int, completion: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            guard let self, (320...8192).contains(width), (320...8192).contains(height),
+                  self.clients.values.allSatisfy({ !$0.streamStarted }) else {
+                completion(false); return
             }
+            self.width = width; self.height = height
+            self.parameters = VideoParameterSets(codec: .h264)
+            self.format = nil; self.decoderRecord = nil; self.gop.removeAll(); self.gopBytes = 0
+            completion(true)
         }
     }
 
@@ -184,7 +230,17 @@ final class VideoOutputServer {
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + 1, repeating: 1)
             timer.setEventHandler { [weak self] in
-                guard let self, self.hls != nil else { return }
+                guard let self, let hls = self.hls, hls.id == airPlayStreamID else { return }
+                let now = Self.nowUs()
+                if let format = self.format, hls.flushIdle(format: format, nowUs: now) == .ready {
+                    self.onLog?("AirPlay HLS: live playlist ready (idle flush)")
+                    self.onAirPlayReady?(hls.id)
+                }
+                if self.lastHLSDiagnosticsAt.map({ now < $0 || now - $0 >= 10_000_000 }) ?? true {
+                    let stats = hls.diagnostics
+                    self.onLog?("AirPlay HLS memory: segments=\(stats.retainedSegments) retained=\(stats.retainedBytes)B pending=\(stats.pendingBytes)B frames=\(stats.pendingFrames) announced=\(stats.playlistAnnounced)")
+                    self.lastHLSDiagnosticsAt = now
+                }
                 self.onKeyframeRequest?(CWL("AirPlay 分段"))
             }
             timer.resume(); hlsKeyframeTimer = timer
@@ -234,8 +290,13 @@ final class VideoOutputServer {
                 guard let self, let candidate, self.generation == run,
                       self.listener === candidate || self.secureListener === candidate else { return }
                 switch state {
-                case .ready: self.report(CWL("{1}已开启，端口 {2}", [String(describing: name), String(describing: port)]))
+                case .ready:
+                    self.report(CWL("{1}已开启，端口 {2}", [String(describing: name), String(describing: port)]))
+                    self.markBrowserListenerReady(secure: secure)
+                case .waiting, .cancelled:
+                    self.readyBrowserListeners.remove(secure)
                 case .failed(let error):
+                    self.readyBrowserListeners.remove(secure)
                     self.report(CWL("{1}启动失败：{2}", [String(describing: name), String(describing: error.localizedDescription)]))
                     candidate.cancel()
                     if secure { self.secureListener = nil; self.securePort = nil; self.httpsRoot = nil } else { self.listener = nil }
@@ -283,10 +344,10 @@ final class VideoOutputServer {
             switch client.mode {
             case .request: self.handleHTTPRequest(client)
             case .webSocket: self.handleWebSocketInput(client)
-            case .raw: client.buffer.removeAll()
+            case .raw, .airPlayResponse: client.buffer.removeAll()
             }
-            if complete || error != nil { self.close(client, reason: nil); return }
-            if self.clients[client.id] != nil { self.receive(client) }
+            if error != nil || (complete && client.mode != .airPlayResponse) { self.close(client, reason: nil); return }
+            if self.clients[client.id] != nil, client.mode != .airPlayResponse { self.receive(client) }
         }
     }
 
@@ -302,10 +363,8 @@ final class VideoOutputServer {
         let request = lines.first?.split(separator: " ") ?? []
         guard request.count == 3 else { reject(client, status: "405 Method Not Allowed"); return }
         let path = String(request[1]).split(separator: "?", maxSplits: 1).first.map(String.init) ?? "/"
-        guard request[0] == "GET" else {
-            #if DEBUG
+        guard request[0] == "GET" || (hls != nil && request[0] == "HEAD") else {
             logAirPlayRequest(from: client.peer, method: String(request[0]), path: path, status: 405)
-            #endif
             reject(client, status: "405 Method Not Allowed"); return
         }
         var headers: [String: String] = [:]
@@ -315,15 +374,21 @@ final class VideoOutputServer {
         }
         client.buffer.removeAll(keepingCapacity: false)
         if let hls {
-            let resource = hls.resource(at: path)
-            #if DEBUG
-            logAirPlayRequest(from: client.peer, method: "GET", path: path, status: resource == nil ? 404 : 200)
-            #endif
-            guard let resource else { reject(client, status: "404 Not Found"); return }
-            sendHTTP(status: "200 OK", contentType: resource.type, body: resource.body, to: client.connection) { [weak self, weak client] in
-                guard let self, let client else { return }
+            client.mode = .airPlayResponse
+            let run = generation
+            queue.asyncAfter(deadline: .now() + 15) { [weak self, weak client] in
+                guard let self, let client, self.generation == run, self.clients[client.id] != nil else { return }
                 self.close(client, reason: nil)
             }
+            let method = String(request[0])
+            let resource = hls.resource(at: path)
+            let reply = AirPlayHTTPReply.make(method: method, range: headers["range"], resource: resource)
+            logAirPlayRequest(from: client.peer, method: method, path: path, status: reply.code)
+            client.connection.send(content: reply.data, completion: .contentProcessed { [weak self, weak client] error in
+                guard let self, let client, self.generation == run, self.clients[client.id] != nil else { return }
+                if error != nil { self.onLog?("AirPlay HTTP: response send failed (\(reply.code))") }
+                self.close(client, reason: nil)
+            })
             return
         }
         switch path {
@@ -424,6 +489,8 @@ final class VideoOutputServer {
         case "ready":
             if !client.browserReady, let id = object["viewer"] as? String { client.viewerID = UUID(uuidString: id) }
             client.browserReady = true; client.waitingForIDR = true; client.streamStarted = false; client.skippingToIDR = false
+            client.wantsAudio = false // A new ready handshake must renew its audio subscription.
+            client.audioRequest = nil; client.audioGranted = false
             let webCodecs = object["decoder"] as? String == "webcodecs"
             if webCodecs != client.webCodecs || !client.streamStarted {
                 onLog?(CWL("{1} 使用{2}解码", [String(describing: client.peer), String(describing: webCodecs ? CWL(" WebCodecs 低延迟") : CWL(" MSE 兼容"))]))
@@ -433,7 +500,10 @@ final class VideoOutputServer {
             sendJSON(["type": "status", "text": CWL("已连接 DerPlay，正在等待关键帧")], to: client)
             replayGOP(to: client)
         case "audio":
+            guard let request = object["request"] as? Int, request >= 0 else { break }
+            client.audioRequest = request
             client.wantsAudio = client.usesAudioClock && object["enabled"] as? Bool == true
+            refreshAudioGrant(client, force: true)
         case "keyframe":
             // Browser decoder recovery (stall, decode error, buffer trim). The receiver throttles.
             let reason = (object["reason"] as? String).map { String($0.prefix(60)) } ?? CWL("浏览器请求")
@@ -527,7 +597,10 @@ final class VideoOutputServer {
         let annexB = picture.reduce(into: Data()) { $0.append(contentsOf: [0, 0, 0, 1]); $0.append($1) }
         if let hls, let format {
             let event = hls.append(sample: sample, keyframe: keyframe, format: format, arrivalUs: Self.nowUs())
-            if event == .ready { onAirPlayReady?(hls.id) }
+            if event == .ready {
+                onLog?("AirPlay HLS: live playlist ready")
+                onAirPlayReady?(hls.id)
+            }
             if event == .keyframeNeeded { onKeyframeRequest?(CWL("AirPlay 分段")) }
             return
         }
@@ -639,7 +712,7 @@ final class VideoOutputServer {
             if client.usesAudioClock { Self.appendTimestamp(frame.arrivalUs, to: &packet) }
             packet.append(fragment)
             sendWebSocket(packet, opcode: 2, to: client)
-        case .request:
+        case .request, .airPlayResponse:
             break
         }
     }
@@ -699,6 +772,16 @@ final class VideoOutputServer {
 
     // MARK: Lifecycle
 
+    // All grant changes and audio writes are ordered on the server queue.
+    private func refreshAudioGrant(_ client: Client, force: Bool = false) {
+        guard let request = client.audioRequest, clients[client.id] != nil else { return }
+        let granted = browserAudio && client.id == primaryBrowser && client.browserReady
+            && client.usesAudioClock && client.wantsAudio
+        guard force || granted != client.audioGranted else { return }
+        client.audioGranted = granted
+        sendJSON(["type": "audioGrant", "request": request, "enabled": granted], to: client)
+    }
+
     private func updatePrimaryDisplay(changed: UUID? = nil, force: Bool = false) {
         let candidates = clients.values.filter { $0.display != nil }
         let selected: Client?
@@ -716,6 +799,11 @@ final class VideoOutputServer {
         }
         let previous = primaryBrowser
         primaryBrowser = selected?.id
+        if previous != primaryBrowser {
+            // Revoke the old receiver before granting the new receiver.
+            if let previous, let old = clients[previous] { refreshAudioGrant(old) }
+            if let current = primaryBrowser, let next = clients[current] { refreshAudioGrant(next) }
+        }
         guard force || previous != primaryBrowser || (changed != nil && changed == primaryBrowser) else { return }
         if previous != primaryBrowser, let selected { onLog?(CWL("主接收屏幕：{1}", [String(describing: selected.peer)])) }
         onDisplay?(selected?.display, selected?.viewerID)
@@ -732,26 +820,24 @@ final class VideoOutputServer {
         if client.mode == .webSocket { updatePrimaryDisplay() }
         if client.touching { onTouches?(client.id.uuidString, []); client.touching = false }
         if let reason { report(reason) }
-        else if client.mode != .request { report(CWL("{1} 已断开（剩余 {2} 台）", [String(describing: client.peer), String(describing: viewerCount)])) }
+        else if client.mode != .request && client.mode != .airPlayResponse { report(CWL("{1} 已断开（剩余 {2} 台）", [String(describing: client.peer), String(describing: viewerCount)])) }
     }
 
-    #if DEBUG
     private func logAirPlayRequest(from peer: String, method: String, path: String, status: Int) {
         guard hls != nil else { return }
         let kind = path.hasSuffix(".m3u8") ? CWL("播放列表") : path.hasSuffix(".mp4") ? CWL("初始化段") : path.hasSuffix(".m4s") ? CWL("视频分段") : CWL("其他资源")
         let message = "AirPlay HTTP：\(peer) \(String(method.prefix(12))) \(kind) → \(status)"
         if airPlayRequestDiagnostics.count < 24, airPlayRequestDiagnostics.insert(message).inserted { onLog?(message) }
     }
-    #endif
 
     private func stopOnQueue() {
         hlsKeyframeTimer?.cancel(); hlsKeyframeTimer = nil
         generation = UUID(); listener?.cancel(); listener = nil
         secureListener?.cancel(); secureListener = nil; securePort = nil
         httpsRoot = nil; hls = nil; browserAudio = false
-        #if DEBUG
+        readyBrowserListeners.removeAll(); browserListenerWaiter = nil
+        lastHLSDiagnosticsAt = nil
         airPlayRequestDiagnostics.removeAll()
-        #endif
         for client in Array(clients.values) {
             if client.touching { onTouches?(client.id.uuidString, []) }
             client.connection.cancel()
@@ -810,5 +896,43 @@ final class VideoOutputServer {
             case .invalidTouch: CWL("触控坐标无效")
             }
         }
+    }
+}
+
+// AirPlay-only finite HTTP resources. HEAD ignores Range; unsupported/multiple ranges
+// fall back to a full representation rather than generating multipart responses.
+struct AirPlayHTTPReply {
+    let code: Int
+    let data: Data
+    static func make(method: String, range: String?, resource: (type: String, body: Data)?) -> Self {
+        let full = resource?.body ?? Data()
+        let size = full.count
+        var code = resource == nil ? 404 : 200
+        var body = full
+        var extra = resource == nil ? "" : "Accept-Ranges: bytes\r\n"
+        if resource != nil, method == "GET", let range, range.hasPrefix("bytes="), !range.contains(",") {
+            let parts = range.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+            if parts.count == 2 {
+                let first = Int(parts[0]), last = Int(parts[1])
+                var bounds: ClosedRange<Int>?
+                if parts[0].isEmpty, let last, last > 0, size > 0 {
+                    bounds = max(0, size - last)...(size - 1)
+                } else if let first, first >= 0, first < size, parts[1].isEmpty || (last != nil && last! >= first) {
+                    bounds = first...min(last ?? (size - 1), size - 1)
+                }
+                if let bounds {
+                    code = 206
+                    body = full.subdata(in: bounds.lowerBound..<(bounds.upperBound + 1))
+                    extra += "Content-Range: bytes \(bounds.lowerBound)-\(bounds.upperBound)/\(size)\r\n"
+                } else {
+                    code = 416; body = Data()
+                    extra += "Content-Range: bytes */\(size)\r\n"
+                }
+            }
+        }
+        let reason = [200: "OK", 206: "Partial Content", 404: "Not Found", 416: "Range Not Satisfiable"][code] ?? "Error"
+        var data = Data("HTTP/1.1 \(code) \(reason)\r\nContent-Type: \(resource?.type ?? "text/plain")\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\(extra)\r\n".utf8)
+        if method != "HEAD" { data.append(body) }
+        return Self(code: code, data: data)
     }
 }

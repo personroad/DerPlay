@@ -8,7 +8,7 @@ class BrandingTests(unittest.TestCase):
             self.assertIn(status,text)
             self.assertNotIn('<title>CarWithin</title>',text)
             self.assertIn('if(m.page!==PAGE_VERSION){location.reload();return}',text)
-        self.assertIn('"1.0.3-"',(ROOT/'App/BrowserReceiverPage.swift').read_text())
+        self.assertIn('"1.0.7-"',(ROOT/'App/BrowserReceiverPage.swift').read_text())
     def test_localized_names(self):
         loc=(ROOT/'App/Localization/Localizable.xcstrings').read_text()
         json.loads(loc)

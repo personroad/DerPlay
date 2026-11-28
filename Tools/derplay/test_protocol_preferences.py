@@ -8,7 +8,7 @@ class ProtocolPreferencesTests(unittest.TestCase):
         body = method(C,'headUnitOutputChanged')
         self.assertLess(body.index('guard !running, !waitingForNetwork'),body.index('restoreProtocolPreferences()'))
         self.assertLess(body.index('restoreProtocolPreferences()'),body.index('saveHeadUnitOutput()'))
-        route = method(C,'interconnectPage')
+        route = method(C,'interconnectRows')
         self.assertLess(route.index('self.headUnitOutputChanged()'),route.index('self.videoOutputToggled()'))
         self.assertIn('preferenceScope = currentPreferenceScope',method(C,'configureSettingsControls'))
     def test_scope_and_exclusions(self):

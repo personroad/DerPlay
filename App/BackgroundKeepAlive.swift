@@ -1,30 +1,23 @@
 import AVFoundation
 
-/// Keeps CarWithin running after the user leaves the app or locks the phone.
-///
-/// iOS suspends a backgrounded app about 10 seconds after it stops doing declared background
-/// work, which kills the CarPlay session, the browser receiver and every socket. CarPlay audio
-/// only runs while the iPhone actually plays sound, and Picture in Picture is not shown on the
-/// lock screen. Looping silent audio counts as playback for the `audio` background mode.
-///
-/// It starts in the foreground before requesting CarPlay and stays active for the session.
-/// Waiting for the app to resign active can fail once the virtual CarAudio route is selected.
-/// It uses `AVAudioPlayer` rather than a second
-/// `AVAudioEngine`: an extra engine that restarted on configuration changes stalled every CarPlay
-/// audio stream SETUP for ~8 s and broke the connection. It never changes an audio session
-/// category that CarPlay audio or PiP has already chosen.
-///
-/// The shared audio session is the weak point: when the last CarPlay audio stream ends (a
-/// navigation prompt, paused music) `CarPlayAudio` used to deactivate the session, which also
-/// stopped this player, and the app was suspended ~10 s later. `CarPlayAudio` now checks
-/// `holdsAudioSession` before deactivating, and a watchdog restarts the player if anything
-/// else stops it.
+/// Best-effort background audio support during an explicitly started CarPlay session.
+/// Silent playback is inherited from upstream; it does not guarantee background execution.
+/// Respect AVAudioSession interruption advice and stop all recovery on user stop.
+/// CarPlayAudio and PiP share this audio session; avoid unnecessary reactivation.
 final class BackgroundKeepAlive {
     private var player: AVAudioPlayer?
     private var observers: [NSObjectProtocol] = []
     private var watchdog: Timer?
-    private var restarts = 0
-    private(set) var isRunning = false
+    private var recovery = BackgroundRecoveryPolicy()
+    private var generation = UUID()
+    var isRunning: Bool { recovery.isRunning }
+    var isActuallyPlaying: Bool { isRunning && recovery.canRecover && player?.isPlaying == true }
+
+    func enteredBackground() { recovery.enteredBackground() }
+    func returnedToForeground() {
+        recovery.becameActive()
+        if !isActuallyPlaying { revive(reason: CWL("返回前台恢复后台音频")) }
+    }
     var onLog: ((String) -> Void)?
 
     private static let lock = NSLock()
@@ -41,28 +34,44 @@ final class BackgroundKeepAlive {
         guard !isRunning else { return true }
         Self.setHolding(true)
         guard play(reason: nil) else { Self.setHolding(false); return false }
-        isRunning = true; restarts = 0
+        recovery.start()
+        generation = UUID()
+        let token = generation
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-                guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                      AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
-                // Resume whether or not iOS sets shouldResume: staying silent means being suspended.
-                self?.revive(reason: CWL("音频中断结束"))
+                guard let self, self.generation == token, self.isRunning,
+                      let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+                if type == .began {
+                    self.recovery.beginInterruption()
+                    self.player?.pause()
+                    self.onLog?(CWL("后台音频已中断"))
+                } else if type == .ended {
+                    let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                    let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+                    self.recovery.endInterruption(shouldResume: options.contains(.shouldResume))
+                    if self.recovery.canRecover {
+                        self.revive(reason: CWL("音频中断结束"))
+                    } else {
+                        self.onLog?(CWL("系统未建议恢复后台音频，请在安全时手动重新启动连接"))
+                    }
+                }
             },
             center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
                 // Every player is invalid after a media services reset; build a new one.
-                self?.player = nil
-                self?.revive(reason: CWL("系统媒体服务重置"))
+                guard let self, self.generation == token, self.isRunning else { return }
+                self.player = nil
+                self.revive(reason: CWL("系统媒体服务重置"))
             },
             center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                guard let self, self.isRunning, self.player?.isPlaying != true else { return }
+                guard let self, self.generation == token, self.isRunning, self.player?.isPlaying != true else { return }
                 self.revive(reason: CWL("音频路由变化"))
             }
         ]
         // Catches every other way the player can be stopped (session deactivated, category change).
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            guard let self, self.isRunning, self.player?.isPlaying != true else { return }
+        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self, self.generation == token, self.isRunning, self.player?.isPlaying != true else { return }
             self.revive(reason: CWL("检测到静音播放已停止"))
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -73,7 +82,8 @@ final class BackgroundKeepAlive {
 
     func stop() {
         guard isRunning else { return }
-        isRunning = false
+        recovery.stop()
+        generation = UUID()
         Self.setHolding(false)
         watchdog?.invalidate(); watchdog = nil
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -85,12 +95,12 @@ final class BackgroundKeepAlive {
     }
 
     private func revive(reason: String) {
-        guard isRunning else { return }
-        restarts += 1
+        guard isRunning, player?.isPlaying != true,
+              recovery.claimRecovery(at: ProcessInfo.processInfo.systemUptime) else { return }
         let ok = play(reason: reason)
-        // Log the first few and then every 10th so a flapping session cannot flood the log.
-        if restarts <= 3 || restarts % 10 == 0 {
-            onLog?(ok ? CWL("后台保持已恢复（{1}，第 {2} 次）", [String(describing: reason), String(describing: restarts)]) : CWL("后台保持恢复失败（{1}）", [String(describing: reason)]))
+        onLog?(ok ? CWL("后台保持已恢复（{1}，第 {2} 次）", [reason, String(recovery.attempts)]) : CWL("后台保持恢复失败（{1}）", [reason]))
+        if !ok && recovery.attempts == 3 {
+            onLog?(CWL("后台音频恢复次数已达上限"))
         }
     }
 

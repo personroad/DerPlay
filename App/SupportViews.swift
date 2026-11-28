@@ -1,6 +1,37 @@
 import UIKit
 import Photos
 
+/// Keeps the original action and legacy configuration while changing only its material.
+private final class SupportGlassActionButton: UIButton {
+    private let legacyConfiguration: UIButton.Configuration
+
+    init(legacy: UIButton.Configuration, action: UIAction) {
+        legacyConfiguration = legacy
+        super.init(frame: .zero)
+        addAction(action, for: .primaryActionTriggered)
+        refreshMaterial()
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshMaterial),
+            name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func refreshMaterial() {
+        guard var glass = DerPlayGlassPalette.nativeButtonConfiguration() else {
+            configuration = legacyConfiguration
+            return
+        }
+        glass.title = legacyConfiguration.title
+        glass.image = legacyConfiguration.image
+        glass.imagePadding = legacyConfiguration.imagePadding
+        glass.cornerStyle = legacyConfiguration.cornerStyle
+        glass.baseForegroundColor = legacyConfiguration.baseForegroundColor
+        glass.baseBackgroundColor = legacyConfiguration.baseBackgroundColor
+        glass.titleTextAttributesTransformer = legacyConfiguration.titleTextAttributesTransformer
+        configuration = glass
+    }
+}
+
 enum DeveloperSupport {
     static let email = "hl8380@qq.com"
     static let alipay = URL(string: "https://qr.alipay.com/fkx16608y1puemmltuocze0")!
@@ -246,13 +277,13 @@ final class SupportInformationViewController: UITableViewController {
             var sendConfig = UIButton.Configuration.tinted()
             sendConfig.title = CWL("发送邮件"); sendConfig.image = UIImage(systemName: "envelope")
             sendConfig.imagePadding = 6; sendConfig.cornerStyle = .capsule
-            let send = UIButton(configuration: sendConfig, primaryAction: UIAction { [weak self] _ in
+            let send = SupportGlassActionButton(legacy: sendConfig, action: UIAction { [weak self] _ in
                 guard let self else { return }; DeveloperSupport.composeEmail(from: self)
             })
             var copyConfig = UIButton.Configuration.gray()
             copyConfig.title = CWL("复制邮箱"); copyConfig.image = UIImage(systemName: "doc.on.doc")
             copyConfig.imagePadding = 6; copyConfig.cornerStyle = .capsule
-            let copy = UIButton(configuration: copyConfig, primaryAction: UIAction { [weak self] _ in
+            let copy = SupportGlassActionButton(legacy: copyConfig, action: UIAction { [weak self] _ in
                 UIPasteboard.general.string = DeveloperSupport.email
                 let alert = UIAlertController(title: CWL("已复制邮箱"), message: DeveloperSupport.email, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: CWL("好"), style: .default)); self?.present(alert, animated: true)
@@ -413,7 +444,7 @@ final class DeveloperSupportViewController: UITableViewController {
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var result = incoming; result.font = UIFont.preferredFont(forTextStyle: .subheadline); return result
         }
-        let button = UIButton(configuration: configuration, primaryAction: UIAction { [weak self] _ in
+        let button = SupportGlassActionButton(legacy: configuration, action: UIAction { [weak self] _ in
             if wechat { self?.saveQRCode() } else { self?.openAlipay() }
         })
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true

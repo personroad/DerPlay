@@ -316,3 +316,82 @@ Based on DerPlay-build8-post-probe-refresh-checkpoint.zip. Runtime experimental 
 
 ### Build 15 R44 — 2026-11-26
 基线 R43。用户批准互联方式排序：本机 CarPlay、浏览器、AirPlay、Carlink、百度 CarLife、亿连 Easy Connect、其余仪表原顺序；两个开发中协议仍禁用。关于页面使用说明、版本记录、检查更新、Releases 同卡；移除 GitHub 项目及上游版本/关注/支持入口，开源致谢居中仅保留原项目和贡献者，版权及 AGPL 底部。竖屏本机预览顺时针旋转，按比例适配；全屏根据显示计划请求系统方向，退出请求竖屏；不修改协议输出尺寸。更新明确授权的历史源码锁及 UI 测试，112 项 Python 回归通过，Swift 语法解析通过；无 Apple SDK/Xcode/真机验证，实际旋转、触控、PiP 和玻璃效果待验证。正式 Build 14 不变，未上传或发布。
+
+### R47 — 2026-11-26
+用户要求继续开发，AirPlay 继续暂停。R46 ZIP SHA256 验证通过。新增独立 NetworkIdentityGate 与 NetworkIdentitySmoke：仅当前 SSID 与预设精确一致、有地址、前台且未停止时允许进入后续恢复判断；未知 SSID 等待，其他 SSID 拒绝，SSID 不等于车机认证。CI 新增 R46/R47 两个 Swift smoke。现有 App 仅 wifi-info entitlement，未配置 Hotspot Configuration；现有启动监视可因地址变化重启，尚未接入新策略，不声称运行时修复。未修改 App、AirPlay、协议、权限或 Build 15 元数据。实际两个 Swift smoke、113 Python 回归、preflight 通过；macOS Apple Security/CryptoKit、Xcode、真机未执行。下一步设计会话绑定的异步 SSID 读取与取消机制，核验签名权限后才接入。
+
+### R48 — 2026-11-26
+用户真机反馈点击 CarPlay 车辆按钮会弹出软件设置，要求本地无动作、车机保持正常逻辑；最终确认本机 CarPlay 白色手机、纯色 #FF9500，替代金黄及灰色方案。ReceiverViewController 将 onCarUIRequested 置 nil，不再退出全屏或打开设置；NativeReceiver requestUI 响应及触控传递源码未改。SettingsUI 对该精确橙色手机图标跳过通用亮度压暗，其他图标规则不变。实际 Python 115/115、两修改 Swift 文件语法解析、preflight 通过；Apple SDK/Xcode/真机未执行，车机实际行为待验证。R46/R47 网络离线策略保留，未接入运行时；AirPlay 暂停。Build 15 元数据不变，未上传。下一步网络会话绑定及异步 SSID 读取。
+
+### R49 — 2026-11-26
+用户确认设置菜单明亮配色，声音、视频帧率等不再偏棕；保留品牌和车辆图片。SettingsUI 统一取消普通图标亮度压暗，按 trait 解析原色；ReceiverViewController 将 CarPlay 外观设为系统紫、浏览器设置设为系统青，声音与帧率保留系统橙。R48 橙色手机及车辆 requestUI 本地无动作保留。更新授权源码锁与相关静态测试，新增两项回归检查。实际 Python 117/117、两 Swift 文件语法解析、preflight 通过；白色符号在亮底上的真机对比度、Apple SDK/Xcode/真机未验证。网络策略仍离线，AirPlay 暂停，Build 15 元数据不变，未部署。下一步网络会话绑定。
+
+
+### R50 — 2026-11-26
+用户要求继续开发。R49 ZIP SHA256 通过。新增 NetworkSessionProbe 与 NetworkSessionProbeSmoke，CI 加入独立测试。单执行器串行调用约束；每次请求独立 UUID，拒绝旧会话、重复、取消及后台迟到回调；完成时由调用方提供当前地址。尚无真实异步系统调用、超时定时器或运行时接入；不改变 App、AirPlay、MFi、权限及 Build 15。Swift 新 smoke、Python 117/117、preflight 实际通过；Apple SDK/Xcode/真机未执行。下一步接入受控网络采样及超时取消，验证后才允许自动恢复。
+
+### R51 — 2026-11-26
+用户要求继续开发。R50 ZIP SHA256 通过。首次运行时接入限定两轮车仪表本机 CarPlay 启动未出画阶段；其他模式保留旧监视。ReceiverViewController 使用 R46/R47/R50 策略、NEHotspotNetwork.fetchCurrent、主队列回调、2 秒单次超时、45 秒启动监视窗口、会话 UUID、后台 epoch 及手动停止取消。三次缺失地址后才允许三次身份匹配的稳定地址采样，最多两次启动重试；未知 SSID 不恢复，单纯 IP 变化不恢复。SSID 不等于车机认证。新增工程及生成器模块引用、两项静态集成测试；原运行方法哈希测试仅归一化明确新增的接入行，更新控制器授权锁。首次回归 117 项中两项旧方法哈希失败，调整明确接入例外后 119/119 通过；三个独立 Swift smoke、Swift parse、preflight 通过。Apple SDK 类型检查、Xcode、真机、实际 SSID 权限未验证；正常出画后的断线恢复、自动加入 Wi-Fi 尚未实现。AirPlay 暂停，其他协议及 Build 15 元数据不变，未上传。下一步优先真机验证启动恢复，再评估 Hotspot Configuration 权限及运行中恢复。
+
+
+### R52 — Wi-Fi 主动加入（2026-11-26）
+用户要求继续开发，AirPlay 暂停。R51 ZIP SHA256 通过。Wi-Fi 与网络页新增“连接此 Wi-Fi”显式入口，使用当前表单 SSID、开放网络或 WPA 密码，调用 NEHotspotConfigurationManager.apply，joinOnce=true；不自动启动 CarPlay、不自动重试、不在运行中调用；请求未结束时阻止启动，表单变化后忽略结果。系统请求无法由本地撤销；系统返回成功或 alreadyAssociated 也不代表已验证网络身份，提示用户确认后手动启动。新增可选签名文件 App/TDSCarKit-Hotspot.entitlements，默认签名设置不变；支持该权限的合法签名可设置 TDS_WIFI_ENTITLEMENTS=App/TDSCarKit-Hotspot.entitlements，LiveContainer 未验证，失败时手动连接。新增中英文提示和两项静态测试；首次 119 项有一项旧方法哈希失败，仅归一化新增启动守卫后 121/121 通过，Swift parse、preflight 通过。Apple SDK 类型检查、Xcode、真机未执行。自动启动前加入、运行中断线恢复尚未实现。Build 15 元数据不变，未上传。
+
+
+### R53 — 启动前 Wi-Fi 自动连接（2026-11-26）
+用户连续要求继续开发，AirPlay 暂停。R52 ZIP SHA256 校验通过。ReceiverViewController 新增 prepareStartupWiFi，仅本机 CarPlay 两轮仪表、前台、已配置且匹配表单的预设、启用 Wi-Fi 名称检测、非自动重启时介入。已匹配或无法读取 SSID 时保留原启动路径（未知时不盲目切换）；已知不匹配时调用一次 NEHotspotConfigurationManager.apply，joinOnce=true；系统成功后等待2秒并再次确认 SSID 和 IP 才继续。35秒总超时、UUID 会话绑定、取消及后台拦截；系统请求无法直接撤销，仍在等待系统回调时禁止重复启动。权限失败提示手动连接。默认签名不变。首次121项测试一项清理顺序检查失败，恢复 localStartupID 首行清理后新增两项静态检查，123/123通过；Swift parse、preflight通过。Apple SDK 类型检查、Xcode、真机及 Apple Security/CryptoKit 未执行。未验证系统弹窗时序、连接实际速度、LiveContainer 权限；正常出画后恢复未实现。Build 15 元数据不变，未部署。建议先安排 Build 16 编译验收，再开发运行中恢复。
+
+
+### R68 — 实验开关（2026-11-26）
+用户确认浏览器原生动态布局探测改用与卡顿自动降级一致的 UISwitch，保留橙色图标、说明、默认关闭、原 UserDefaults 键、浏览器限定及运行/等待网络时禁用。新增独立 valueChanged 回调，禁止运行期间写入并恢复保存值；不修改探测协议。首次回归 128/129（旧测试要求文字按钮实现），更新该测试以验证新入口及原限制后 129/129 通过；Swift 语法解析及 preflight 通过。Apple SDK/Xcode/真机未执行，Build16 未变，未部署。此前确认的关于页、使用说明迁移及 CarPlay Dashboard 日夜/Dock 预览仍未实现；本轮仅完成开关。
+
+
+## R69 — 用户确认的关于页与 CarPlay Dashboard 设置预览（2026-11-26）
+- 当前内部源码检查点 0.0.1 Build 16 / R69，直接继承 R68 工作树（无 .git，远端 SHA 未核验）。未授权 Build17，不生成正式交付包、不推送、不发布。
+- 用户明确要求：使用说明移到软件设置最外层、软件外观上方；关于页删除版本记录入口，保留内部实现；检查更新在 GitHub Releases 上方；简介改为“iPhone 通用无线车机互联工具”，版本信息在简介下面，居中；开源致谢卡片上移，标题上下各12pt；原项目、贡献者、AGPL 与上游版权保留。R68 原生动态布局探测 UISwitch 保留。
+- 用户确认地图、音乐分栏日夜设计后要求继续开发。共享 DerPlayAppearancePreview 使用八个本地图片资源（独立日夜 Dashboard、三个 Dock 图标的日夜变体），来源为用户确认的 AI 设计图 DESIGN_ASSETS/R69/dashboard-approved.png，不是苹果官方截图或原始图标。Dashboard 图片等比例显示；选择自动/左右/底部时组合 Dock；自动继承 legacy driving side，未改实际协议。为匹配已批准的宽幅设计，左右 Dock 预览高宽比 0.36、底部 0.46（实现决定），窄屏图标适配；实际画面不变。两个页均跟随现有 CarPlay 日夜设置，系统外观变化时刷新两个预览页，软件外观独立。地图、音乐、日程均为示例静态内容，不是实际导航、音乐或日历信息。
+- 源码修改仅 App/ReceiverViewController.swift、App/SettingsUI.swift、App/DerPlayGlassUI.swift 及新增图片资源；相关测试和明确授权的基线更新。底层协议与 AirPlay R62–R67 修复、MFi、现有开关和偏好存储不变。
+- 首次 Python 129 项有3项旧入口/整文件锁断言失败，按用户授权更新版本记录迁移声明和两个文件哈希；新增3项静态测试。最终 Python 132/132 PASS (16.158s)，修改 Swift 文件 frontend parse PASS，preflight PASS。日志 TEST_REPORTS/R69-*。无 Apple SDK / Xcode 类型检查或真机；12pt 为源码布局目标，实际视觉间距、预览裁切/字号/小屏适配、系统日夜刷新、AirPlay 黑屏延迟仍待验证。Apple Security/CryptoKit smoke 未运行。没有对 GitHub 发起变更。下一步为累计候选审计、真机测试方案，正式构建须用户明确确认。
+
+
+## R70 — 两轮车 CarPlay 车辆图标修复（2026-11-26）
+- 用户报告台铃、九号、极核、春风等车辆图标为空白，截图见本会话；原 512×512 RGBA 默认资源直接进入 OEM 配置，CarPlayInfo.vehicleButtonSize 只接受 1…192 px 正方形 PNG，故原资源不满足发送条件。截图不能独立证明系统缓存行为。
+- 新增独立 DerPlayVehicleScooterOEM 120×120 RGB PNG，从已批准的白色踏板车轮廓等比缩小，透明角用原深灰色填充；保留两个 512px 设置资源及软件日夜映射。defaultVehicleIcon 优先使用 OEM 资源，缺失时以原图按 120px、scale=1、opaque、standard range 渲染；原汽车回退保留。自选图片优先级、名称、车辆按钮开关、requestUI 无本地动作、协议及 AirPlay 不变。OEM 图标仍在会话启动时发送，不新增动态更新或自动重连。
+- 实际验证：Python 133/133 (17.877s)、修改 Swift 文件 frontend parse、preflight 全部通过；新增 PNG IHDR、资源映射与回退静态测试。Apple SDK/Xcode、实机图标显示及系统缓存未验证；停车后手动停止并重新启动，检查四品牌各型号默认图标和自选图片；若仍空白需新日志。Build16 不变，未推送、未正式打包。
+
+
+## R71 / R72 — 连接设置副标题与主页卡片放大（2026-11-26）
+- R71 用户确认连接设置标题正下方居中显示“仅对当前互联方式生效”，12pt 次级色、间距4pt。Wi-Fi 预设及自定义车辆图片仍为共享资源，未改存储。实际留存 R71 Python 日志为135/135通过，17.904s 为 R72 而非 R71；R71 日志为18.423s。
+- R72 用户要求主页软件设置、互联方式、连接设置卡片及字体适度放大。仅修改 App/DerPlayGlassUI.swift 的首页 Dashboard：标题 subheadline→body、图标19pt/24pt列宽、值 caption→footnote、行高50→58pt、行垂直内边距4pt、状态 footnote→subheadline、状态内边距12→14pt；AirPlay 选择行标题同步 body。字体采用系统文本样式（默认尺寸，动态字体可变）；允许标题及值换行。保留卡片宽度、材质、圆角、阴影、既有菜单回调、路由选择器及滚动与固定底栏约束。未改 ReceiverViewController、实际画面、协议、MFi 或偏好。
+- 基线 /mnt/data/r71work 为本地无 .git 工作树，远端 SHA 未核验。新增两个源码级回归测试，Python 137/137 通过（17.904s），Swift frontend parse、preflight 均退出0；日志 TEST_REPORTS/R72-*。无 Xcode/iOS SDK 完整编译、Apple Security/CryptoKit 或真机验证；窄屏实际换行、卡片可见高度及视觉协调性待真机确认。Build16 不变，未打包正式 IPA、未上传 GitHub。
+
+
+## R81 — 正式源码原生 Liquid Glass 按钮（2026-11-26）
+- 用户连续要求继续开发；以 R72 正式本地源码为基线，R80 独立网页原型不覆盖 Swift 业务逻辑。iOS 26+ 且 Swift compiler >=6.2 时使用 UIKit UIButton.Configuration.glass()/prominentGlass()；旧系统、旧编译器、创建控件时已开启减少透明度保持原配置。参考 Apple UIKit UIButton.Configuration 文档及 WWDC25 Build a UIKit app with the new design。
+- 主页启动/停止使用 prominentGlass，保留绿色/红色、原有标题/图标/启用状态/80pt 最小高度及事件；返回/关闭使用 glass，保留44pt、触觉反馈和原有导航；进入/退出全屏使用深色 glass，保留44pt、原有触控、显示时机和自动隐藏。原生按钮去除重复手工阴影/按压缩放；旧版导航按钮尊重减少动态效果。仅按钮创建时选择材质，尚未实现运行期间减少透明度开关即时重建。
+- 改动 App/DerPlayGlassUI.swift、App/ReceiverViewController.swift、新增 Tools/derplay/test_r81_glass_buttons.py，更新明确授权的 UI 文件冻结摘要。未修改 AirPlay、MFi、连接协议、配置存储或实际 CarPlay 布局；主页仍按原生源码竖屏限制，不将 R80 网页横屏方案移植。
+- 实际测试：Python 139/139 (17.402s)，Swift frontend parse、preflight 退出0。日志 TEST_REPORTS/R81-*；Linux 无 Apple SDK，尚未进行 UIKit 类型检查、Xcode 编译、真实玻璃渲染、动态透明度、实际点击/手势或真机连接验收；Apple Security/CryptoKit smoke 未执行。Build16 不变，未部署，未打包正式 IPA。下一步：普通设置行、分段控件、输入区域的原生材质审计及后续候选验收。
+
+
+## R82 — 共用设置选择控件（2026-11-26）
+- 用户要求继续开发；本地 R81 工作树（无 .git），R81 补丁 SHA256 校验通过。仅修改 App/SettingsUI.swift：ChoiceMenu 使用既有 nativeButtonConfiguration()，iOS26+ 且支持编译器、创建时未启用减少透明度才使用原生玻璃胶囊；否则保留原 plain 及原内边距。原生分支左右9pt、上下6pt，保留菜单选中标记、禁用选项、valueChanged、标题和测量。覆盖 HTTPS、浏览器、仪表、BMS 等使用 ChoiceMenu 的入口，不替换原生 UISwitch 或列表勾选。
+- SettingsRow.field 的共用行内文本框最小高度44pt，使用 identifier 防止重复添加高度约束；不改变输入内容、编辑/保存、清除、键盘、压缩优先级；保持行内无独立边框，避免长地址空间被压缩。普通列表卡片、分段控件及 BMS 其他按钮尚未改造；创建后辅助功能材质即时刷新仍待实现。
+- 新增两项静态回归，更新 SettingsUI.swift 既有 UI 保护摘要，最终 Python 141/141 PASS (18.624s)，Swift frontend parse、preflight PASS；Apple Security/CryptoKit 未运行，Linux 无 Apple SDK/Xcode、真机，原生菜单宽度、对比度、点击、输入布局仍待验证。未改协议、AirPlay、MFi、设置存储或 Build16，未上传。下一步：设置卡片减少透明度及其他原生操作控件审计。
+
+## R150 — 连接模式与浏览器竖屏初始协商（2026-11-27）
+- 以用户上传的 R146 all-in-one 源码为本地基线；仅开发检查点，不改变 0.0.1 Build18 发布元数据，不生成完整 ZIP。
+- 主页文案、标题阴影、AirPlay TV 投屏符号及玻璃背景更新；连接模式页面按用户确认的两卡片结构与项目顺序重组；右上角原关闭项改为主页共享状态的圆形 Liquid Glass 启动/停止按钮。
+- 画面比例基础列表固定为 32:9、21:9、16:9、16:10、4:3、4:1、3:2、3:1、1:1、9:16、3:4。设备全屏物理尺寸约简后动态加入，按横屏/正方形/竖屏分组，再按冒号前数字降序；旧 CarScreen 记录兼容。
+- 「最高分辨率」更名「清晰度」，弹窗仅显示 480P/720P/1080P/2K/4K 档位；实际输出分辨率单独实时显示。新 DisplayGeometry 按横竖屏旋转硬边界、比例拟合、320px 最短边及偶数像素约束。
+- 本机 CarPlay + 浏览器输出 + 自动适配：HTTP 接收页先启动，等待接收端页面全屏或 viewport 覆盖物理屏幕至少97%，再按实际 viewport 计算输出尺寸，更新 VideoOutputServer 后开始 CarPlay 首次 /info 握手。等待最长45秒；无有效报告时回退默认尺寸。地址在等待期间可复制。该功能是首次连接前协商，不是运行中动态 View Area 切换。
+- 保留 CarLife、AirPlay、仪表专属尺寸及现有动态多 View Area 实验开关；后者仍未验证。
+- 验证：Python 279/279 PASS；DisplayGeometrySmoke PASS；CarScreenStoreSmoke PASS（新物理尺寸字段与旧记录解码）；修改 Swift 文件 swiftc -parse PASS；preflight PASS；工程生成器包含新 DisplayGeometry.swift。Apple Security/CryptoKit smoke 因非 macOS 未运行；Swift Package PairSetupTests 因 Linux 缺 Apple CommonCrypto/CryptoKit 未完成；无 Xcode 完整编译、IPA、签名部署或真机验证。
+- 真机验收重点：先在接收设备打开复制的地址并全屏；确认 9:19 的首个 CarPlay /info、视频输出和 HID 坐标一致，画面铺满且不变形；测试未全屏、45秒超时、停止/重启、触控、导航按钮动画与 AirPlay 图标材质。未经用户明确确认，不编译、不发布完整总 ZIP。
+
+### R151
+- 原生比例优先，320px 不再通过改变比例实现；按需提升档位且不覆盖保存的偏好；协议硬上限仍生效。已知不兼容的浏览器几何不启动默认画布。
+- 280 Python tests PASS; DisplayGeometrySmoke PASS; Swift parse PASS; Preflight PASS. macOS identity import smoke NOT RUN; no Xcode or device verification.
+
+### R156 — protocol geometry regression
+- CarLife manual sizing respects fixed decoder axes (1920×1080), unlike rotatable browser tiers. Local-only mode no longer waits for a nonexistent browser viewport; CarLife auto label waits for negotiated raster. Dedicated instrument and existing CarLife automatic negotiation paths unchanged.
+- Python 289/289 PASS; geometry Swift matrix 420 cases PASS; CarLife, protocol preferences, device profile, AirPlay HLS and /info builder (configuration test double) smoke PASS; Swift parse and preflight PASS. Initial frozen-file failure was resolved by recording the reviewed controller hash; original hash retained. No Xcode, macOS identity import, live protocol or device test.

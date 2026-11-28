@@ -48,6 +48,7 @@ final class CarPlayAudio {
     let format: ReceiverAudioFormat
     let connectionID: UInt64
     private let queue: DispatchQueue
+    private let mayLoopBackLocally: Bool
     private let data: AudioDatagramPort
     private let control: AudioDatagramPort
     private let cipher: AudioStream
@@ -59,7 +60,17 @@ final class CarPlayAudio {
     private let decoder: NativeAudioDecoder
     private var microphone: NativeMicrophone?
     private var queuedFrames = 0
+    private var playbackGeneration: UInt64 = 0
+    private var blockedMediaRoute = false
+    #if os(iOS)
+    private var routeObserver: NSObjectProtocol?
+    private var lastOutputRoute: [String]?
+    #endif
     private var active = true
+    // Render queue only: SETUP may construct sockets before committing the stream.
+    private var committed = false
+    private var reportedDecodedAudio = false
+    private var reportedBrowserHandoff = false
     private var playing = false
     private var rejected = 0
     private var firstTimestamp: UInt32?
@@ -79,10 +90,68 @@ final class CarPlayAudio {
     private static var playingStreams = 0
     #if os(iOS)
     private static var hasSpeakerOverride = false
+    // Render-queue confined: session ownership survives a playback graph reset.
+    private static var sessionOwners = Set<ObjectIdentifier>()
+    private static var duplexOwners = Set<ObjectIdentifier>()
+    private static func requiresDuplex(requestsMicrophone: Bool) -> Bool {
+        requestsMicrophone || !duplexOwners.isEmpty || pendingMicrophoneStops > 0 || hasSpeakerOverride
+    }
+    private static var pendingMicrophoneStops = 0
+    private static var deferredEndAfterMicrophoneStop = false
+    private static func finishMicrophoneStop() {
+        pendingMicrophoneStops -= 1
+        guard pendingMicrophoneStops == 0 else { return }
+        let releaseOverride = deferredEndAfterMicrophoneStop
+        deferredEndAfterMicrophoneStop = false
+        restoreMediaCategoryIfNeeded()
+        deactivateSessionIfIdle(releaseSpeakerOverride: releaseOverride)
+    }
+    // Render queue only. Do not change category while a microphone or legacy
+    // speaker override still owns the shared session. Never activate a new route here.
+    private static func shouldRestoreMediaCategory() -> Bool {
+        !sessionOwners.isEmpty && duplexOwners.isEmpty && pendingMicrophoneStops == 0 && !hasSpeakerOverride
+    }
+    private static func restoreMediaCategoryIfNeeded() {
+        // Once the last duplex stream has stopped, a surviving media stream
+        // must not inherit its forced speaker route. Preserve the legacy idle
+        // replacement behavior when there are no remaining owners.
+        guard !sessionOwners.isEmpty, duplexOwners.isEmpty, pendingMicrophoneStops == 0 else { return }
+        let session = AVAudioSession.sharedInstance()
+        if hasSpeakerOverride {
+            do {
+                try session.overrideOutputAudioPort(.none)
+                hasSpeakerOverride = false
+            } catch {
+                NSLog("DerPlay R177 speaker override release failed: %@", error.localizedDescription)
+                return
+            }
+        }
+        guard shouldRestoreMediaCategory(), session.category == .playAndRecord else { return }
+        let options: AVAudioSession.CategoryOptions = BackgroundKeepAlive.holdsAudioSession ? [.mixWithOthers] : []
+        do {
+            try session.setCategory(.playback, mode: .default, options: options)
+        } catch {
+            // Keep the existing category on failure; a later stream transition can retry.
+            NSLog("DerPlay R171 media category restoration failed: %@", error.localizedDescription)
+        }
+    }
+    private func releaseSessionOwnership() {
+        Self.duplexOwners.remove(ObjectIdentifier(self))
+        if Self.sessionOwners.remove(ObjectIdentifier(self)) != nil {
+            Self.restoreMediaCategoryIfNeeded()
+            Self.deactivateSessionIfIdle()
+        }
+    }
     #endif
     var onLog: ((String) -> Void)?
     var onBrowserAudio: ((AVAudioPCMBuffer, UInt64) -> Void)?
-    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil) throws {
+    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, mayLoopBackLocally: Bool = true) throws {
+        if let microphonePort {
+            guard microphonePort > 0, !format.isAAC, format.channels == 1 else {
+                throw ProtocolError.malformed(CWL("麦克风配置无效"))
+            }
+        }
+        self.mayLoopBackLocally = mayLoopBackLocally
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
         decoder = try NativeAudioDecoder(format: format)
         output = decoder.output
@@ -90,25 +159,64 @@ final class CarPlayAudio {
         data = try AudioDatagramPort(queue: Self.renderQueue, peerAddress: peerAddress)
         control = try AudioDatagramPort(queue: Self.renderQueue, peerAddress: peerAddress)
         dataPort = data.port; controlPort = control.port
-        if let microphonePort, !format.isAAC, format.channels == 1 {
+        if let microphonePort {
             microphone = NativeMicrophone(secret: secret, connectionID: connectionID, address: peerAddress, port: microphonePort, format: format)
         }
         data.onPacket = { [weak self] in self?.receive($0) }
+        #if os(iOS)
+        routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(), queue: nil) { [weak self] _ in
+            self?.queue.async { [weak self] in self?.handleOutputRouteChange() }
+        }
+        #endif
+    }
+    deinit {
+        #if os(iOS)
+        if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
+        #endif
+    }
+    func commitPlayback() {
+        queue.async { self.commitPlaybackOnQueue() }
+    }
+    private func commitPlaybackOnQueue() {
+        guard active, !committed else { return }
+        committed = true
+        onLog?("R182: audio admitted")
     }
     private func receive(_ wire: Data) {
-        guard active else { return }
+        guard active, committed else { return }
         do {
             let packet = try cipher.receive(wire)
             let arrival = DispatchTime.now().uptimeNanoseconds / 1000
             // Decode every accepted compressed packet to preserve the codec's overlap state.
             packets += 1
+            if packets == 1 { onLog?("R182: first authenticated audio packet") }
             if let lastTimestamp, Int32(bitPattern: packet.timestamp &- lastTimestamp) <= 0 { latePackets += 1; return }
             lastTimestamp = packet.timestamp
             guard let buffer = try decoder.decode(packet.samples) else { return }
+            if !reportedDecodedAudio {
+                reportedDecodedAudio = true
+                onLog?("R182: first decoded audio buffer")
+            }
             if let onBrowserAudio {
+                if !reportedBrowserHandoff {
+                    reportedBrowserHandoff = true
+                    onLog?("R182: first browser audio handoff (not delivery confirmation)")
+                }
                 onBrowserAudio(buffer, browserTimestamp(packet.timestamp, arrival: arrival))
                 return
             }
+            #if os(iOS)
+            // A route notification is asynchronous. Reconcile the current output before
+            // accepting another local media buffer, even if that notification is queued.
+            handleOutputRouteChange()
+            // Browser forwarding has already returned. Never render ordinary received media
+            // into a CarAudio route: it may be this device's own virtual receiver.
+            if microphone == nil, shouldGuardCarAudio(AVAudioSession.sharedInstance().currentRoute.outputs) {
+                suppressLocalMediaForCarAudio()
+                return
+            }
+            #endif
             let frames = Int(buffer.frameLength)
             guard queuedFrames + frames <= format.sampleRate * 2 else { overflowPackets += 1; return }
             if !playing {
@@ -117,15 +225,30 @@ final class CarPlayAudio {
                 retryPlaybackAt = now + 0.5
                 #if os(iOS)
                 let session = AVAudioSession.sharedInstance()
-                let needsDuplexCategory = microphone != nil || Self.hasSpeakerOverride
-                var options: AVAudioSession.CategoryOptions = needsDuplexCategory ? [.defaultToSpeaker] : []
+                let needsDuplexCategory = Self.requiresDuplex(requestsMicrophone: microphone != nil)
+                // Allow hands-free Bluetooth without preferring the built-in speaker.
+                var options: AVAudioSession.CategoryOptions = needsDuplexCategory ? [.allowBluetooth] : []
+                if Self.hasSpeakerOverride { options.insert(.defaultToSpeaker) }
                 if BackgroundKeepAlive.holdsAudioSession { options.insert(.mixWithOthers) }
                 let category: AVAudioSession.Category = needsDuplexCategory ? .playAndRecord : .playback
                 if session.category != category || session.mode != .default || session.categoryOptions != options {
                     try session.setCategory(category, mode: .default, options: options)
                 }
                 try session.setActive(true)
-                if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
+                Self.sessionOwners.insert(ObjectIdentifier(self))
+                if microphone != nil { Self.duplexOwners.insert(ObjectIdentifier(self)) }
+                Self.deferredEndAfterMicrophoneStop = false
+                if microphone == nil {
+                    let outputs = session.currentRoute.outputs
+                    // Record the route before starting the graph, not afterward:
+                    // a change during engine.start() must invalidate this graph.
+                    lastOutputRoute = Self.outputRouteSignature(outputs)
+                    if shouldGuardCarAudio(outputs) {
+                        suppressLocalMediaForCarAudio()
+                        return
+                    }
+                }
+                if microphone != nil, shouldGuardCarAudio(session.currentRoute.outputs) {
                     // In the same-device session CarAudio is our own virtual CarPlay receiver.
                     // Feeding decoded audio back into that route leaves the physical speaker silent.
                     if session.category != .playAndRecord {
@@ -136,7 +259,7 @@ final class CarPlayAudio {
                         Self.hasSpeakerOverride = true
                         onLog?(CWL("本机音频避开 CarPlay 路由，改用 iPhone 扬声器"))
                     } catch {
-                        Self.deactivateSessionIfIdle()
+                        releaseSessionOwnership()
                         throw error
                     }
                 }
@@ -151,7 +274,7 @@ final class CarPlayAudio {
                 }
                 do { try engine.start() } catch {
                     #if os(iOS)
-                    Self.deactivateSessionIfIdle()
+                    releaseSessionOwnership()
                     #endif
                     throw error
                 }
@@ -166,11 +289,26 @@ final class CarPlayAudio {
                 onLog?(CWL("音频输出路由：{1}", [String(describing: AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", "))]))
                 #endif
             }
+            #if os(iOS)
+            // Reconcile again after session activation and engine startup. The
+            // handler may destroy the graph, so obtain the player only afterward.
+            handleOutputRouteChange()
+            guard playing else { return }
+            if microphone == nil, shouldGuardCarAudio(AVAudioSession.sharedInstance().currentRoute.outputs) {
+                suppressLocalMediaForCarAudio()
+                return
+            }
+            if blockedMediaRoute {
+                blockedMediaRoute = false
+                onLog?("R165: local media route available again")
+            }
+            #endif
             guard let player else { return }
+            let generation = playbackGeneration
             queuedFrames += frames
             player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 self?.queue.async { [weak self] in
-                    guard let self, self.active else { return }
+                    guard let self, self.active, self.playbackGeneration == generation else { return }
                     self.queuedFrames = max(0, self.queuedFrames - frames)
                     if self.queuedFrames == 0, !self.buffering {
                         self.player?.pause(); self.buffering = true; self.underruns += 1
@@ -193,6 +331,51 @@ final class CarPlayAudio {
             if rejected <= 3 { onLog?(CWL("音频数据包被拒绝：{1}", [String(describing: error.localizedDescription)])) }
         }
     }
+    #if os(iOS)
+    private func shouldGuardCarAudio(_ outputs: [AVAudioSessionPortDescription]) -> Bool {
+        mayLoopBackLocally && outputs.contains(where: { $0.portType == .carAudio })
+    }
+    private static func outputRouteSignature(_ outputs: [AVAudioSessionPortDescription]) -> [String] {
+        outputs.map { $0.portType.rawValue + ":" + $0.uid }.sorted()
+    }
+    private func handleOutputRouteChange() {
+        guard active, committed, microphone == nil, onBrowserAudio == nil else { return }
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let signature = Self.outputRouteSignature(outputs)
+        guard signature != lastOutputRoute else { return }
+        lastOutputRoute = signature
+        onLog?("R166: media route changed: " + outputs.map { $0.portType.rawValue }.joined(separator: ","))
+        if shouldGuardCarAudio(outputs) {
+            suppressLocalMediaForCarAudio()
+        } else if blockedMediaRoute {
+            blockedMediaRoute = false
+            retryPlaybackAt = 0
+            onLog?("R166: media route unblocked; awaiting fresh audio")
+        } else if playing {
+            // A new physical output must not replay audio queued for the previous route.
+            // Keep the shared session active; rebuild the graph on the next fresh packet.
+            resetLocalPlaybackForRouteChange()
+            retryPlaybackAt = 0
+            onLog?("R167: media route changed; awaiting fresh audio")
+        }
+    }
+    private func suppressLocalMediaForCarAudio() {
+        guard !blockedMediaRoute || playing else { return }
+        blockedMediaRoute = true
+        resetLocalPlaybackForRouteChange()
+        // Do not deactivate or override the user's system route here.
+        onLog?("R165: local media rendering suppressed on CarAudio; browser forwarding unaffected")
+    }
+    private func resetLocalPlaybackForRouteChange() {
+        playbackGeneration &+= 1
+        player?.stop()
+        engine?.stop()
+        player = nil; engine = nil
+        queuedFrames = 0; buffering = true; firstTimestamp = nil
+        feedbackLock.lock(); renderedSampleTime = nil; feedbackLock.unlock()
+        if playing { playing = false; Self.playingStreams -= 1 }
+    }
+    #endif
     private func browserTimestamp(_ rtp: UInt32, arrival: UInt64) -> UInt64 {
         if let anchor = browserClock {
             let samples = Int64(Int32(bitPattern: rtp &- anchor.rtp))
@@ -241,31 +424,70 @@ final class CarPlayAudio {
     }
     private func stopOnQueue() {
         guard active else { return }; active = false
-        if let microphone { DispatchQueue.main.async { microphone.stop() } }; microphone = nil
+        committed = false
+        #if os(iOS)
+        if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
+        routeObserver = nil; lastOutputRoute = nil
+        #endif
+        if let microphone {
+            #if os(iOS)
+            Self.pendingMicrophoneStops += 1
+            #endif
+            DispatchQueue.main.async {
+                microphone.stop()
+                #if os(iOS)
+                Self.renderQueue.async { Self.finishMicrophoneStop() }
+                #endif
+            }
+        }
+        microphone = nil
         data.stop(); control.stop(); player?.stop(); engine?.stop(); queuedFrames = 0
         if playing {
             playing = false; Self.playingStreams -= 1
-            #if os(iOS)
-            Self.deactivateSessionIfIdle()
-            #endif
         }
+        #if os(iOS)
+        releaseSessionOwnership()
+        #endif
     }
     #if os(iOS)
     /// Releases the shared session after the last stream, unless the background keep-alive still
     /// plays in it: deactivating would stop that player too and iOS would suspend the app.
     private static func deactivateSessionIfIdle(releaseSpeakerOverride: Bool = false) {
-        guard playingStreams == 0 else { return }
+        guard playingStreams == 0, sessionOwners.isEmpty else { return }
+        guard pendingMicrophoneStops == 0 else {
+            if releaseSpeakerOverride { deferredEndAfterMicrophoneStop = true }
+            return
+        }
         let session = AVAudioSession.sharedInstance()
         let keepAlive = BackgroundKeepAlive.holdsAudioSession
         if hasSpeakerOverride {
             // A CarPlay audio format change tears down the old RTP stream. Keep the
             // output route through that replacement so iOS does not renegotiate again.
             guard releaseSpeakerOverride else { return }
-            hasSpeakerOverride = false
-            try? session.overrideOutputAudioPort(.none)
-            try? session.setCategory(.playback, mode: .default, options: keepAlive ? [.mixWithOthers] : [])
+            do {
+                try session.overrideOutputAudioPort(.none)
+                hasSpeakerOverride = false
+            } catch {
+                // Retain the flag so a later explicit end can retry.
+                return
+            }
+            if !keepAlive {
+                try? session.setCategory(.playback, mode: .default, options: [])
+            }
         }
-        guard !keepAlive else { return }
+        if keepAlive {
+            // The silent keep-alive player must not inherit an idle duplex category.
+            // Do not deactivate its session or select a physical output.
+            if session.category == .playAndRecord ||
+                (session.category == .playback && !session.categoryOptions.contains(.mixWithOthers)) {
+                do {
+                    try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                } catch {
+                    NSLog("DerPlay R178 idle duplex category restoration failed: %@", error.localizedDescription)
+                }
+            }
+            return
+        }
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
     }
     #endif
@@ -280,7 +502,10 @@ final class NativeAudioDecoder {
     private var compressed: AVAudioFormat?
     init(format: ReceiverAudioFormat) throws {
         self.format = format
-        output = AVAudioFormat(standardFormatWithSampleRate: Double(format.sampleRate), channels: AVAudioChannelCount(format.channels))!
+        guard let pcmOutput = AVAudioFormat(standardFormatWithSampleRate: Double(format.sampleRate), channels: AVAudioChannelCount(format.channels)) else {
+            throw ProtocolError.malformed(CWL("PCM 输出缓冲区"))
+        }
+        output = pcmOutput
         if format.isAAC || format.isOpus {
             var description = AudioStreamBasicDescription(mSampleRate: Double(format.sampleRate), mFormatID: format.isOpus ? kAudioFormatOpus : kAudioFormatMPEG4AAC,
                 mFormatFlags: format.isOpus ? 0 : 2, mBytesPerPacket: 0, mFramesPerPacket: format.isOpus ? UInt32(format.sampleRate / 50) : 1024, mBytesPerFrame: 0,

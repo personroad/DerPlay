@@ -64,8 +64,14 @@ class DisplayEventBridgeTests(unittest.TestCase):
         ui=(ROOT/'App/ReceiverViewController.swift').read_text()
         self.assertIn('config.experimentalBrowserViewAreas = outputMode == .browser && UserDefaults.standard.bool',ui)
         section=ui.split('private func browserExperimentsPage()',1)[1].split('private func diagnosticsSection()',1)[0]
-        self.assertIn('guard !self.running, !self.waitingForNetwork',section)
-        self.assertIn('UserDefaults.standard.set(!enabled, forKey: key)',section)
+        handler=ui.split('private func browserViewAreaProbeChanged()',1)[1].split('private func browserExperimentsPage()',1)[0]
+        self.assertIn('guard !running, !waitingForNetwork',handler)
+        self.assertIn('UserDefaults.standard.set(browserViewAreaProbeSwitch.isOn, forKey: key)',handler)
+        self.assertIn('browserViewAreaProbeSwitch.setOn(UserDefaults.standard.bool(forKey: key), animated: true)',handler)
+        self.assertIn('self.browserViewAreaProbeSwitch.isEnabled = !self.running && !self.waitingForNetwork',section)
+        self.assertIn('.control("原生动态布局探测"',section)
+        self.assertIn('browserViewAreaProbeSwitch.isEnabled = value',ui)
+        self.assertIn('#selector(browserViewAreaProbeChanged), for: .valueChanged',ui)
         self.assertIn('触控暂停至会话结束',section)
     def test_probe_write_diagnostics_and_capability(self):
         media=(ROOT/'App/CarPlayMediaSession.swift').read_text()

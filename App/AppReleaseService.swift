@@ -147,7 +147,13 @@ struct AppReleaseService {
               manifests[0].size > 0, manifests[0].size <= 128 * 1024 else { throw ReleaseError.invalid }
         // Fetch on every actual check, even when already current. The attachment's download_count
         // is only an approximate request count, not unique users or guaranteed successful checks.
-        let (metadataData, _) = try await read(address.absoluteString)
+        let metadataData: Data
+        do {
+            (metadataData, _) = try await read(address.absoluteString)
+        } catch ReleaseError.missing {
+            // A missing manifest is not the absence of a published release.
+            throw ReleaseError.missingMetadata
+        }
         guard metadataData.count <= 128 * 1024 else { throw ReleaseError.invalid }
         let metadata = try JSONDecoder().decode(IOSUpdateMetadata.self, from: metadataData)
         try metadata.validate(for: release)
