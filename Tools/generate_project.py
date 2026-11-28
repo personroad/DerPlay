@@ -20,7 +20,7 @@ def uid(name): return hashlib.sha1(name.encode()).hexdigest()[:24].upper()
 def q(value): return json.dumps(str(value))
 objects = []
 def add(key, value): objects.append(f'{uid(key)} = {{ {value} }};'); return uid(key)
-sources = sorted([*root.glob('App/*.swift'), root / 'DerPlay/Extensions/DynamicDisplayWire.swift', root / 'DerPlay/Extensions/DeviceProfilePolicy.swift', *root.glob('App/*.m'), *root.glob('App/*.c'), *root.rglob('Sources/TDSCarKitCore/**/*.swift'), *root.glob('Sources/CTDSCarKitCrypto/*.c')])
+sources = sorted([*root.glob('App/*.swift'), root / 'DerPlay/Extensions/DynamicDisplayWire.swift', root / 'DerPlay/Extensions/DisplayGeometry.swift', root / 'DerPlay/Extensions/DeviceProfilePolicy.swift', root / 'DerPlay/Extensions/NetworkRecoveryPolicy.swift', root / 'DerPlay/Extensions/NetworkIdentityGate.swift', root / 'DerPlay/Extensions/NetworkSessionProbe.swift',  *root.glob('App/*.m'), *root.glob('App/*.c'), *root.rglob('Sources/TDSCarKitCore/**/*.swift'), *root.glob('Sources/CTDSCarKitCrypto/*.c')])
 refs = []; builds = []
 for path in sources:
     relative = str(path.relative_to(root))

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Native event/video session adapted from PlayPort's AirPlaySession and media engine.
 import Foundation
+import CoreFoundation
 import CryptoKit
 import AVFoundation
 
 final class CarPlayMediaSession {
+    // Only a rejected, non-mutating audio renegotiation may keep the control channel open.
+    enum SetupRejection: Error { case invalidMicrophone }
     private let queue: DispatchQueue
     private let secret: SymmetricKey
     private let peerAddress: String
@@ -15,6 +18,7 @@ final class CarPlayMediaSession {
     private var timing: MediaTiming?
     private var audio: [Int: CarPlayAudio] = [:]
     private let audioEnabled: Bool
+    private let mayLoopBackLocally: Bool
     private let hevc: Bool
     private var eventCipher: ControlCipher?
     private var eventParser = RTSPParser(allowResponses: true)
@@ -45,9 +49,10 @@ final class CarPlayMediaSession {
     var onLog: ((String) -> Void)?
     var onBrowserAudio: ((Int, AVAudioPCMBuffer, UInt64) -> Void)?
     var onVideo: ((Data, VideoCodec) -> Void)?
-    init(queue: DispatchQueue, secret: SymmetricKey, peerAddress: String, audioEnabled: Bool, hevc: Bool, browserDisplayDiagnostics: Bool = false, advertisedDisplayAreaCount: Int = 1) {
+    init(queue: DispatchQueue, secret: SymmetricKey, peerAddress: String, audioEnabled: Bool, hevc: Bool, mayLoopBackLocally: Bool = true, browserDisplayDiagnostics: Bool = false, advertisedDisplayAreaCount: Int = 1) {
         self.queue = queue; self.secret = secret; self.peerAddress = peerAddress
         self.audioEnabled = audioEnabled; self.hevc = hevc
+        self.mayLoopBackLocally = mayLoopBackLocally
         self.browserDisplayDiagnostics = browserDisplayDiagnostics
         self.advertisedDisplayAreaCount = advertisedDisplayAreaCount
     }
@@ -58,13 +63,39 @@ final class CarPlayMediaSession {
         advertisedDisplayAreaCount = count
         onLog?("DerPlay experimental: media session received \(count) declared View Areas")
     }
+    // Preserve the existing voice-stream request classification, but never
+    // acknowledge a requested uplink that cannot actually be constructed.
+    private static func validatedMicrophonePort(requested: Bool, rawPort: Any?, format: ReceiverAudioFormat) throws -> UInt16? {
+        guard requested else { return nil }
+        guard let number = rawPort as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let port = UInt16(exactly: number.doubleValue), port > 0 else {
+            throw ProtocolError.malformed(CWL("麦克风端口无效"))
+        }
+        guard !format.isAAC, format.channels == 1 else {
+            throw ProtocolError.malformed(CWL("麦克风格式不受支持"))
+        }
+        return port
+    }
     func setup(_ data: Data) throws -> Data {
         guard let values = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw ProtocolError.malformed(CWL("SETUP 属性列表"))
         }
         onLog?(CWL("SETUP 字段：{1}", [String(describing: values.keys.sorted().joined(separator: ", "))]))
         var response: [String: Any] = [:]
+        // Stage audio replacements until the complete SETUP response is serializable.
+        // A failure in a later stream must not retire any previously committed audio.
+        var pendingAudio: [Int: CarPlayAudio] = [:]
+        defer { pendingAudio.values.forEach { $0.stop() } }
         if let streams = values["streams"] as? [[String: Any]] {
+            // Mixed video SETUP still changes live state immediately; do not classify it as recoverable.
+            let recoverableAudioOnly = eventListener != nil && (videoListener != nil || !audio.isEmpty)
+                && !streams.isEmpty && streams.allSatisfy { stream in
+                    guard let type = stream["type"] as? NSNumber,
+                          CFGetTypeID(type) != CFBooleanGetTypeID(),
+                          let exact = Int(exactly: type.doubleValue) else { return false }
+                    return [100, 101, 102].contains(exact)
+                }
             var replies: [[String: Any]] = []
             for stream in streams {
                 guard let type = stream["type"] as? NSNumber else { throw ProtocolError.malformed(CWL("媒体流类型")) }
@@ -72,25 +103,45 @@ final class CarPlayMediaSession {
                 if [100, 101, 102].contains(type.intValue), audioEnabled {
                     guard eventListener != nil, let connectionID = stream["streamConnectionID"] as? NSNumber,
                           let bits = stream["audioFormat"] as? NSNumber else { throw ProtocolError.malformed(CWL("音频 SETUP 字段")) }
+                    guard pendingAudio[type.intValue] == nil else {
+                        throw ProtocolError.malformed(CWL("重复的音频流类型"))
+                    }
                     let format = try ReceiverAudioFormat(bits: bits.uint64Value)
                     let audioType = (stream["audioType"] as? String ?? "").lowercased()
                     let requestsMicrophone = type.intValue == 100 && ["telephony", "speechrecognition", "default"].contains(audioType)
                         && ((stream["input"] as? Bool) == true || (stream["dataPort"] as? NSNumber)?.intValue ?? 0 > 0)
-                    let microphonePort = requestsMicrophone ? (stream["dataPort"] as? NSNumber).flatMap { UInt16(exactly: $0.intValue) }.flatMap { $0 > 0 ? $0 : nil } : nil
-                    audio.removeValue(forKey: type.intValue)?.stop()
+                    let microphonePort: UInt16?
+                    do {
+                        microphonePort = try Self.validatedMicrophonePort(requested: requestsMicrophone, rawPort: stream["dataPort"], format: format)
+                    } catch {
+                        onLog?("R184: audio SETUP rejected: requested microphone has invalid port or unsupported format")
+                        if recoverableAudioOnly { throw SetupRejection.invalidMicrophone }
+                        throw error
+                    }
+                    // Construct the replacement before retiring the working stream.
+                    // Decoder or socket initialization can throw during renegotiation.
                     let output = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
-                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort)
-                    output.onLog = { [weak self] in self?.onLog?($0) }
+                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort, mayLoopBackLocally: mayLoopBackLocally)
+                    let diagnosticID = UUID().uuidString
+                    let diagnosticType = type.intValue
+                    output.onLog = { [weak self] message in
+                        self?.onLog?("audio[\(diagnosticID)] type=\(diagnosticType) \(message)")
+                    }
+                    onLog?("R182: audio[\(diagnosticID)] type=\(diagnosticType) staged format=\(bits.uint64Value)")
                     // Keep calls and Siri on the iPhone; only intended playback goes to LAN viewers.
                     if let onBrowserAudio, !requestsMicrophone, !["telephony", "speechrecognition"].contains(audioType) {
                         let streamType = type.intValue
                         output.onBrowserAudio = { buffer, stamp in onBrowserAudio(streamType, buffer, stamp) }
                     }
-                    audio[type.intValue] = output
+                    onLog?("R173: audio SETUP staged type=\(type.intValue), category=\(["compatibility", "default", "media", "alert", "telephony", "speechrecognition"].contains(audioType) ? audioType : "other"), microphoneRequested=\(requestsMicrophone), browserForwarding=\(output.onBrowserAudio != nil)")
+                    pendingAudio[type.intValue] = output
                     replies.append(["type": type, "dataPort": output.dataPort, "controlPort": output.controlPort,
                                     "streamConnectionID": connectionID])
                     onLog?(CWL("音频流 {1} 已就绪：{2} {3} Hz / {4} 声道", [String(describing: type), String(describing: format.name), String(describing: format.sampleRate), String(describing: format.channels)]))
                     continue
+                }
+                if [100, 101, 102].contains(type.intValue), !audioEnabled {
+                    onLog?("R167: audio SETUP requested while audio capability disabled, type=\(type.intValue)")
                 }
                 guard type.intValue == 110, let connectionID = stream["streamConnectionID"] as? NSNumber else {
                     throw ProtocolError.malformed(CWL("不支持的媒体流类型 {1}", [String(describing: type)]))
@@ -140,7 +191,15 @@ final class CarPlayMediaSession {
             response = ["eventPort": listener.port, "timingPort": timing!.port, "enabledFeatures": features]
             onLog?(CWL("事件/时钟同步监听器已就绪：{1}/{2}", [String(describing: listener.port), String(describing: timing!.port)]))
         }
-        return try PropertyListSerialization.data(fromPropertyList: response, format: .binary, options: 0)
+        let encoded = try PropertyListSerialization.data(fromPropertyList: response, format: .binary, options: 0)
+        for (type, output) in pendingAudio {
+            let previous = audio.updateValue(output, forKey: type)
+            previous?.stop()
+            // Old stop and new admission run in order on the shared render queue.
+            output.commitPlayback()
+        }
+        pendingAudio.removeAll()
+        return encoded
     }
 
     private func recoverFirstVideoUnit(on connection: MediaTCPConnection, attempt: Int) {
@@ -324,9 +383,23 @@ final class CarPlayMediaSession {
         guard !body.isEmpty, let values = try PropertyListSerialization.propertyList(from: body, format: nil) as? [String: Any],
               let streams = values["streams"] as? [[String: Any]] else { stop(); return true }
         for stream in streams {
-            guard let type = stream["type"] as? NSNumber else { continue }
-            if type.intValue == 110 { video?.stop(); video = nil; videoListener?.stop(); videoListener = nil; screen = nil }
-            audio.removeValue(forKey: type.intValue)?.stop()
+            guard let type = stream["type"] as? NSNumber,
+                  CFGetTypeID(type) != CFBooleanGetTypeID(),
+                  let exactType = Int(exactly: type.doubleValue) else { continue }
+            if exactType == 110 { video?.stop(); video = nil; videoListener?.stop(); videoListener = nil; screen = nil }
+            guard let current = audio[exactType] else { continue }
+            // A delayed teardown for a replaced stream must not stop its successor.
+            // Preserve legacy type-only requests when no connection ID is present.
+            if let rawID = stream["streamConnectionID"] {
+                guard let id = rawID as? NSNumber,
+                      CFGetTypeID(id) != CFBooleanGetTypeID(),
+                      !["f", "d"].contains(String(cString: id.objCType)),
+                      id.uint64Value == current.connectionID else {
+                    onLog?("R186: audio TEARDOWN ignored: stale or invalid connection ID, type=\(exactType)")
+                    continue
+                }
+            }
+            audio.removeValue(forKey: exactType)?.stop()
         }
         return false
     }

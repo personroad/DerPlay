@@ -1,5 +1,6 @@
 """Presentation-only UI source guards; not Xcode/UI automation tests."""
 import hashlib,re,unittest
+from candidate_lock import LOCK as CANDIDATE, METHODS, check_method
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 CONTROLLER=(ROOT/'App/ReceiverViewController.swift').read_text()
@@ -10,27 +11,40 @@ def method(text,name):
  end=re.search(r'^    (?:(?:@objc )?(?:(?:private|fileprivate|override) )?(?:func|var|let|static|struct|enum)\b|// MARK:)|^}',text[m.end():],re.M)
  return text[m.start():m.end()+(end.start() if end else len(text)-m.end())].rstrip()
 
-RUNTIME_METHOD_SHA256 = {'toggleReceiver': '272788318c5d933e9f513c90687f977460625a584256702d63611dadd275eec7', 'startPreparedCarLife': 'ca89a4efa201d33faae8fc1fe2043fcee4cb0cbdbbb8e02623236031e70ab079', 'stop': 'dfd61e0b31bf747caf3db3b6ec0198068e467cee587b1b608770049bdd242302', 'setEditing': '5b8a1c3a47e1efa2d23989f0832289d3958485b4779f3b6568794c6c03366a34', 'configureDisplay': '39a2d7da485b3c28a61ee042e83dd78a822b137071354194b291bbfade94bc04', 'planDisplay': 'a6f2a471f64b809682e9abc627eb0a976e7b6f90cba45d0add0f0792b7ff3146', 'saveSettings': 'bcf7e7aeb8ddecdd91dd4e542c9a1637ec0ddfa3f26f3083eeb5f0ca2c92df09', 'saveHeadUnitOutput': 'bff12f4c9896b600b4775a8d4a381a9421e64a5c2261e9f36dd5ce15c983e7b6', 'headUnitOutputChanged': '9c1c82777b555b4f58d2a7db21817947ee81fc5d89b2b1b789c50dca1b879824', 'videoOutputToggled': 'da2c8bd8eb963c1f6190065ba6531db6eafcaa1882315f6409ba0c031d017983', 'appearanceChanged': '04cf4ca3dcf163f276aed59dd96e4b18be516eb56d38f4e6835de2705d8f40b5', 'showFullscreen': '684d2ccc82162b5aea7388d17bb2136b91d0f8bd0926cfe5774075d7375e0fd9', 'hideFullscreen': 'c57af16f820ca4368d14b771deb13d0a3d36c926464ea3c04e29b216f10c0019', 'startPictureInPicture': '8585b4642f65754374292286905c8c02a6fabd9baab9319db8898acb6eb3d122', 'restoreInlineVideoSurface': 'e75284f630941f4915272fd35f0cb663583382538a65c959bd9019c29870bd79', 'updatePictureInPicturePolicy': '828530081d756e9fa2346ba6cf0e3187d5d552c80ca903063079fec0b022e46b', 'restartCarPlay': '4c96ca53eb10c5ea1364ddebab8f3ea275fd92f62c1732e3334f8ed1e7163347', 'configureSettingsControls': '6f29fe648f916d0c5b8e74cbff20b8316a80a1e779b94aa28c4a944efcc903ea', 'saveCurrentWiFiPreset': '55a8255547997ee88ea067f7cc5fc59e6abf7cc9b4fba377f00dd79b1bad5779', 'derPlayIdentityPage': 'd43ae9c4778f4ae182413788b780c58327ad27442bc43e8e0fcdf152cc967e82', 'documentPickerWasCancelled': '60d1174d038c3c0ecbf67da4aa95d7204c293ec44d40340e9336029bf4097b97', 'loadIdentity': '61f701d44dc70709513e014aeded9707b87030b18845c4afe6933c43a4131d36'}
+RUNTIME_METHOD_SHA256 = {'toggleReceiver': '780ae8ff2813543f5b5a343510ca03c1b6f880a4265460aef91c88e0cb2e6d7c', 'startPreparedCarLife': 'ca89a4efa201d33faae8fc1fe2043fcee4cb0cbdbbb8e02623236031e70ab079', 'stop': 'dfd61e0b31bf747caf3db3b6ec0198068e467cee587b1b608770049bdd242302', 'setEditing': '5b8a1c3a47e1efa2d23989f0832289d3958485b4779f3b6568794c6c03366a34', 'configureDisplay': '39a2d7da485b3c28a61ee042e83dd78a822b137071354194b291bbfade94bc04', 'planDisplay': '1fcec4106ce9f46900ac9562e2b015ac0a423a319ab97044b56f485bfb9cf0b8', 'saveSettings': 'bcf7e7aeb8ddecdd91dd4e542c9a1637ec0ddfa3f26f3083eeb5f0ca2c92df09', 'saveHeadUnitOutput': 'bff12f4c9896b600b4775a8d4a381a9421e64a5c2261e9f36dd5ce15c983e7b6', 'headUnitOutputChanged': '9c1c82777b555b4f58d2a7db21817947ee81fc5d89b2b1b789c50dca1b879824', 'videoOutputToggled': 'da2c8bd8eb963c1f6190065ba6531db6eafcaa1882315f6409ba0c031d017983', 'appearanceChanged': '04cf4ca3dcf163f276aed59dd96e4b18be516eb56d38f4e6835de2705d8f40b5', 'showFullscreen': '684d2ccc82162b5aea7388d17bb2136b91d0f8bd0926cfe5774075d7375e0fd9', 'hideFullscreen': 'c57af16f820ca4368d14b771deb13d0a3d36c926464ea3c04e29b216f10c0019', 'startPictureInPicture': '8585b4642f65754374292286905c8c02a6fabd9baab9319db8898acb6eb3d122', 'restoreInlineVideoSurface': 'e75284f630941f4915272fd35f0cb663583382538a65c959bd9019c29870bd79', 'updatePictureInPicturePolicy': '828530081d756e9fa2346ba6cf0e3187d5d552c80ca903063079fec0b022e46b', 'restartCarPlay': '4c96ca53eb10c5ea1364ddebab8f3ea275fd92f62c1732e3334f8ed1e7163347', 'configureSettingsControls': 'f178cdfb6cb0a3ce3d56c1850d0185303113ca5dd8a3ffed77d24283a3f40d0c', 'saveCurrentWiFiPreset': 'ea9d83bc4ec9dae0aa5da76ea1669638dfeff4a3e2abe17bffd12f292747f19e', 'derPlayIdentityPage': 'd43ae9c4778f4ae182413788b780c58327ad27442bc43e8e0fcdf152cc967e82', 'documentPickerWasCancelled': '60d1174d038c3c0ecbf67da4aa95d7204c293ec44d40340e9336029bf4097b97', 'loadIdentity': '61f701d44dc70709513e014aeded9707b87030b18845c4afe6933c43a4131d36'}
+
+R136_STARTUP_SHA256 = {'saveSettings': '7fb054bcccf498ebd4fc103e6acb3187f750afb194e9ff84f70d48b230b2553a', 'commitStartupSettings': '0068dd04cd2cf2acf5be4a08e8a03d35ad84975a0718ec20376ea8d285685764'}
 
 class GlassUITests(unittest.TestCase):
+    def test_home_airplay_row_is_clickable_and_adapts_to_appearance(self):
+        self.assertIn('Button(action: openAirPlayPicker)', GLASS)
+        self.assertIn('private func openAirPlayPicker()', GLASS)
+        self.assertIn('airPlayPicker.firstSubview(of: UIButton.self)?.sendActions(for: .touchUpInside)', GLASS)
+        self.assertIn('foregroundStyle(scheme == .dark ? Color.white : Color.black)', GLASS)
+        self.assertIn('DerPlayHomeAirPlayPicker(picker: airPlayPicker)', GLASS)
+        self.assertNotIn('glassEffect(.regular, in: Circle())', GLASS.split('if state.showsAirPlayPicker {', 1)[1].split('}', 1)[0])
+
     def test_home_card_order_and_real_routes(self):
-        labels=['menuRow("软件设置"','menuRow("互联方式"','menuRow("连接设置"']
+        labels=['menuRow(CWL("通用设置")','menuRow(CWL("连接模式")']
         self.assertEqual(sorted(GLASS.index(x) for x in labels),[GLASS.index(x) for x in labels])
-        for route in ['self?.revealSettings()','self?.revealSettings(modes: true)','self?.revealSettings(output: true)']:
+        for route in ['self?.revealSettings()','self?.revealSettings(output: true)']:
             self.assertIn(route,CONTROLLER)
         self.assertIn('navigationItem.rightBarButtonItem = nil',CONTROLLER)
         self.assertIn('dashboardHost.didMove(toParent: self)',CONTROLLER)
     def test_native_glass_and_fallback(self):
         for token in ['#if compiler(>=6.2)','#available(iOS 26.0, macCatalyst 26.0, *)','rows.glassEffect','rows.background(.ultraThinMaterial','accessibilityReduceTransparency']:
             self.assertIn(token,GLASS)
-    def test_single_settings_sheet_and_close(self):
+    def test_single_settings_sheet_and_playback_control(self):
         route=method(CONTROLLER,'revealSettings')
-        for token in ['DerPlayGlassNavigationController(rootViewController: root)','modalPresentationStyle = .pageSheet','sheet.detents = [.custom','preferredCornerRadius = 34','navigation.onClose','present(navigation, animated: true)']:
+        for token in ['DerPlayGlassNavigationController(rootViewController: rootSettingsPage())','modalPresentationStyle = .pageSheet','sheet.detents = [.custom','preferredCornerRadius = 34','navigation.onClose','present(navigation, animated: true)','prepareConnectionLayer()']:
             self.assertIn(token,route)
         self.assertIn('navigationController?.pushViewController(make(), animated: true)',SETTINGS)
-        self.assertIn('installClose(on: viewController)',GLASS)
+        self.assertIn('clearTrailingPlaybackControls(on: viewController)',GLASS)
+        self.assertIn('navigation.reservesConnectionPlayback = true',method(CONTROLLER,'prepareConnectionLayer'))
+        self.assertIn('connectionControlLayer?.active = active',CONTROLLER)
         self.assertIn('navigation.dismiss(animated: true)',method(CONTROLLER,'closeGlassSettings'))
         self.assertIn('settingsNavigation = nil',method(CONTROLLER,'settingsDismissed'))
+
     def test_settings_sheet_continuous_material_and_safe_header(self):
         for token in ['view.backgroundColor = DerPlayGlassPalette.sheetTint', 'appearance.configureWithOpaqueBackground()', 'navigationBar.isTranslucent = true', 'navigationBar.compactScrollEdgeAppearance = appearance', 'page.navigationItem.compactScrollEdgeAppearance = appearance']:
             self.assertIn(token, GLASS)
@@ -50,7 +64,7 @@ class GlassUITests(unittest.TestCase):
         self.assertNotIn('super.popViewController(animated: false)', GLASS)
     def test_r42_settings_palette(self):
         root = method(CONTROLLER, 'rootSettingsPage')
-        for token in ['"sun.max.fill", .systemBlue', '"pip.fill", .systemPurple', '"lock.shield", .systemGreen', '"stethoscope", .systemRed', '"info.circle.fill", .systemGray']:
+        for token in ['"moon.stars.fill", .systemBlue', '"pip.fill", .systemPurple', '"lock.shield", .systemGreen', '"info.circle.fill", .systemGray']:
             self.assertIn(token, root)
 
     def test_settings_surface_reapplied_on_navigation(self):
@@ -61,9 +75,9 @@ class GlassUITests(unittest.TestCase):
             self.assertIn('page.navigationItem.'+key+' = appearance', GLASS)
 
     def test_settings_icon_contrast_and_fallback(self):
-        for token in ['color.resolvedColor(with: traits)', 'scale *= 0.95', '> 0.18', 'fill.setFill()', 'UIImage(systemName: "gearshape", withConfiguration: configuration)', 'image.withRenderingMode(.alwaysOriginal)', 'traits: tableView.traitCollection']:
+        for token in ['color.resolvedColor(with: traits)', 'let fill = resolved', 'fill.setFill()', 'UIImage(systemName: "gearshape", withConfiguration: configuration)', 'image.withRenderingMode(.alwaysOriginal)', 'traits: tableView.traitCollection']:
             self.assertIn(token, SETTINGS)
-        for name in ['softwareAppearancePage', 'carPlayAppearancePage', 'dockPositionPage']:
+        for name in ['softwareAppearanceMenu', 'dockPositionPage']:
             self.assertNotIn('DerPlayGlassPalette.accent', method(CONTROLLER, name))
 
     def test_interconnect_menu_order_preserves_persisted_raw_values(self):
@@ -77,13 +91,13 @@ class GlassUITests(unittest.TestCase):
         self.assertIn('outputMode.rawValue, forKey: "headUnitOutputV2"', CONTROLLER)
 
     def test_modes_and_run_guard(self):
-        route=method(CONTROLLER,'interconnectPage')
+        route=method(CONTROLLER,'interconnectRows')
         for token in ['HeadUnitOutput.menuOrder.filter','DerPlayUpstreamBridge.extensionMenuItems()','guard let self, !self.running, !self.waitingForNetwork','self.videoOutputToggled()','self.headUnitOutputChanged()','"尚未开放", icon: (icon, .systemBlue)']:
             self.assertIn(token,route)
     def test_locked_modes_retain_icons(self):
-        route=method(CONTROLLER,'interconnectPage')
+        route=method(CONTROLLER,'interconnectRows')
         self.assertIn('let locked = running || waitingForNetwork',route)
-        self.assertLess(route.index('switch mode'),route.index('if locked {'))
+        self.assertLess(route.index('switch mode'),route.index('if locked || wifiAddSavePending {'))
         self.assertIn('return .info(title, selected ? "当前使用" : "停止后可选", icon: icon)',route)
         self.assertIn('SettingsRow.action(title, icon: icon)',route)
         self.assertIn('SettingsRow(title: title, icon: icon, detail: { value }, kind: .info)',SETTINGS)
@@ -93,17 +107,47 @@ class GlassUITests(unittest.TestCase):
     def test_appearance_and_approved_removal(self):
         self.assertNotIn('.control(CWL("驾驶位")',CONTROLLER)
         self.assertIn('config.rightHandDrive = driveControl.selectedSegmentIndex == 1',CONTROLLER)
-        self.assertIn('.page("Dock 栏位置"',CONTROLLER)
-        route=method(CONTROLLER,'carPlayAppearancePage')
+        self.assertIn('.page(CWL("Dock 栏")',CONTROLLER)
+        route=method(CONTROLLER,'dockPositionPage')
         self.assertIn('DerPlayAppearancePreview(night: night, dock:',route)
-        self.assertIn('self.appearanceControl.sendActions(for: .valueChanged)',route)
-        self.assertIn('外观示意 · 非实际输出',route)
+        self.assertIn('let night = systemAppearanceIsDark',route)
+        self.assertIn('布局示意 · 非实际输出',route)
     def test_runtime_methods_are_byte_identical(self):
+        self.assertEqual(set(CANDIDATE['methods']), METHODS)
         for name,digest in RUNTIME_METHOD_SHA256.items():
             with self.subTest(name=name):
+                if name in METHODS:
+                    check_method(self, name, CONTROLLER, method)
+                    continue
                 body = method(CONTROLLER,name)
+                if name in R136_STARTUP_SHA256:
+                    self.assertEqual(hashlib.sha256(body.encode()).hexdigest(), R136_STARTUP_SHA256[name])
+                    continue
+                # R151: reverse reviewed geometry-only edits before historical hash checks.
+                if name == 'toggleReceiver':
+                    self.assertIn('                                      codec: config.videoCodec, iconWidthMM: config.widthPhysicalMM,\n                                      ratioAdjustedForMinimumSide: planDisplay(for: targetScreen).ratioAdjustedForMinimumSide)\n', body)
+                    body = body.replace('                                      codec: config.videoCodec, iconWidthMM: config.widthPhysicalMM,\n                                      ratioAdjustedForMinimumSide: planDisplay(for: targetScreen).ratioAdjustedForMinimumSide)\n', '                                      codec: config.videoCodec, iconWidthMM: config.widthPhysicalMM)\n', 1)
+                    self.assertIn('            }\n            receiver.onBrowserGeometryFailure = { [weak self] message in\n                guard let self, self.localStartupID == startupID, self.running, self.outputMode == .browser else { return }\n                self.stop()\n                self.statusLabel.text = message\n                self.refreshDerPlayPanel()\n', body)
+                    body = body.replace('            }\n            receiver.onBrowserGeometryFailure = { [weak self] message in\n                guard let self, self.localStartupID == startupID, self.running, self.outputMode == .browser else { return }\n                self.stop()\n                self.statusLabel.text = message\n                self.refreshDerPlayPanel()\n', '', 1)
+                    self.assertIn('                        if let plan = self.liveDisplay { live.width = plan.width; live.height = plan.height }\n', body)
+                    body = body.replace('                        if let plan = self.liveDisplay { live.width = plan.width; live.height = plan.height }\n', '', 1)
+                if name == 'configureDisplay':
+                    self.assertIn('        config.displayRatioUnsupported = plan.ratioUnsupported\n        config.browserGeometryBounds = displayGeometryBounds()\n', body)
+                    body = body.replace('        config.displayRatioUnsupported = plan.ratioUnsupported\n        config.browserGeometryBounds = displayGeometryBounds()\n', '', 1)
+                if name == 'planDisplay':
+                    # R156: only the CarLife fixed-axis decoder cap is new.
+                    current = 'landscapeBounds: candidates,\n                                                               absoluteBounds: outputMode == .carLife ? .init(width: 1920, height: 1080) : nil) {'
+                    self.assertIn(current, body)
+                    body = body.replace(current, 'landscapeBounds: candidates) {', 1)
+                    self.assertEqual(hashlib.sha256(body.encode()).hexdigest(), '4c3eee051d9a1a5336c06f8193d3c87414210f11ec399382668ef101a8ca7d4d')
+                    continue
+                # R93: reverse only reviewed, user-authorized method edits for original hash protection.
+                for current, prior in {'toggleReceiver': [('            keepAlive.start()\n', '            if keepAliveSwitch.isOn { keepAlive.start() }\n'), ('            keepAlive.start()\n', '            if keepAliveSwitch.isOn { keepAlive.start() }\n'), ('        keepAlive.start()\n', '        if keepAliveSwitch.isOn { keepAlive.start() }\n')], 'stop': [('        displayedVideo = false\n', '        displayedVideo = false; didRequestImmediatePiP = false\n')], 'updatePictureInPicturePolicy': [('        pictureInPicture.setAutomatic(running && displayedVideo && pictureInPictureTiming.selectedSegmentIndex == 1)\n', '        let timing = pictureInPictureTiming.selectedSegmentIndex\n        pictureInPicture.setAutomatic(running && displayedVideo && timing != 0)\n        guard running, displayedVideo, timing == 2, !didRequestImmediatePiP,\n              presentedViewController == nil else { return }\n        didRequestImmediatePiP = true\n        _ = pictureInPicture.start()\n')], 'configureSettingsControls': [('        let savedPiPTiming = defaults.object(forKey: "pictureInPictureTiming") as? Int ?? (legacyPiPEnabled ? 1 : 0)\n        pictureInPictureTiming.selectedSegmentIndex = savedPiPTiming == 0 ? 0 : 1\n        defaults.set(pictureInPictureTiming.selectedSegmentIndex, forKey: "pictureInPictureTiming")\n        defaults.set(pictureInPictureTiming.selectedSegmentIndex == 1, forKey: "pictureInPictureEnabled")\n', '        pictureInPictureTiming.selectedSegmentIndex = defaults.object(forKey: "pictureInPictureTiming") as? Int ?? (legacyPiPEnabled ? 1 : 0)\n'), ('        defaults.set(true, forKey: "backgroundKeepAlive")\n', '        keepAliveSwitch.isOn = defaults.object(forKey: "backgroundKeepAlive") as? Bool ?? true\n        keepAliveSwitch.addTarget(self, action: #selector(keepAliveChanged), for: .valueChanged)\n')]}.get(name, []):
+                    self.assertIn(current, body)
+                    body = body.replace(current, prior, 1)
                 # R29: normalize only the approved visual label refreshes to the frozen baseline.
                 if name == 'toggleReceiver':
+                    body = body.replace('\n        guard !wifiJoinPending else {\n            statusLabel.text = CWL("请等待系统 Wi-Fi 连接请求完成。")\n            return\n        }', '', 1)
                     for before, after in [
                         ('            refreshDerPlayPanel()\n            log(CWL("正在请求', '            startButton.setTitle(CWL("停止 iPad 连接"), for: .normal)\n            log(CWL("正在请求'),
                         ('            refreshDerPlayPanel()\n            startButton.configuration?.image', '            startButton.setTitle(CWL("停止 CarPlay"), for: .normal)\n            startButton.configuration?.image'),
@@ -118,8 +162,18 @@ class GlassUITests(unittest.TestCase):
                 if name == 'hideFullscreen':
                     body = body.replace('        videoSurface.releaseAllTouches()\n', '', 1).replace('        hidePreviewFullscreenButton()\n', '', 1)
                 if name == 'stop':
+                    body = body.replace('reportedScreen = nil; primaryViewer = nil; browserGeometryResolvedForSession = false; pendingRestartReason = nil', 'reportedScreen = nil; primaryViewer = nil; pendingRestartReason = nil')
                     body = body.replace('hideFullscreen(); hidePreviewFullscreenButton()', 'hideFullscreen(); videoActions.isHidden = true; controlBar.isHidden = true')
+                    # R96/R97: normalize only approved AirPlay policy/diagnostic resets.
+                    # R99: retain the original stop hash after removing only the three explicit KVO invalidations.
+                    for observation in ('airPlayItemObservation', 'airPlayRouteObservation', 'airPlayTimeObservation'):
+                        line = f'        {observation}?.invalidate()\n'
+                        self.assertIn(line, body)
+                        body = body.replace(line, '', 1)
+                    body = body.replace('        airPlayTransportRecovery.reset()\n', '', 1)
+                    body = body.replace('        airPlayBufferTelemetry.reset()\n', '', 1)
                 if name == 'configureDisplay':
+                    body = body.replace('        config.browserAutoAdaptBeforeCarPlay = outputMode == .browser && modeControl.selectedSegmentIndex == 1 && followsCarScreen && config.videoOutputPort != nil\n', '')
                     body = body.replace('config.oemIconPNG = customVehicleIcon ?? defaultVehicleIcon()', 'config.oemIconPNG = customVehicleIcon ?? Self.carButtonIcon', 1)
                     body = body.replace('\n        config.dockPosition = DerPlayDockPosition.saved()', '')
                 if name in ('toggleReceiver', 'stop'):
@@ -143,12 +197,57 @@ class GlassUITests(unittest.TestCase):
                     body = body.replace('\n        restoreProtocolPreferences()', '').replace('\n        updateVideoAspect()', '')
                 if name == 'headUnitOutputChanged':
                     body = body.replace('\n        guard !running, !waitingForNetwork else { return }\n        restoreProtocolPreferences()', '')
+                if name == 'setEditing':
+                    body = body.replace('\n        browserViewAreaProbeSwitch.isEnabled = value', '')
                 if name == 'configureSettingsControls':
+                    # R144: reconstruct only removed accessory UI for original hash comparison.
+                    body = body.replace('            field.addTarget(self, action: #selector(saveBrowserPorts), for: .editingDidEnd)\n', '            field.addTarget(self, action: #selector(saveBrowserPorts), for: .editingDidEnd)\n            let toolbar = UIToolbar()\n            toolbar.items = [.flexibleSpace(), UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak field] _ in\n                field?.resignFirstResponder()\n            })]\n            toolbar.sizeToFit()\n            field.inputAccessoryView = toolbar\n', 1)
+                    body = body.replace('            $0.addTarget($0, action: #selector(UIResponder.resignFirstResponder), for: .editingDidEndOnExit)\n', '            $0.addTarget($0, action: #selector(UIResponder.resignFirstResponder), for: .editingDidEndOnExit)\n            if $0.inputAccessoryView == nil {\n                let field = $0\n                let toolbar = UIToolbar()\n                toolbar.items = [.flexibleSpace(), UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak field] _ in\n                    field?.resignFirstResponder()\n                })]\n                toolbar.sizeToFit()\n                field.inputAccessoryView = toolbar\n            }\n', 1)
                     body = body.replace('WiFiPresetStore.legacyChannel()', 'UInt8(UserDefaults.standard.object(forKey: "wifiChannel") as? Int ?? 36)', 1)
                     body = body.replace('\n        carButtonSwitch.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)', '')
                     body = body.replace('\n        iconSizeControl.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)', '')
                     body = body.replace('\n        resolutionControl.addTarget(self, action: #selector(rememberCarLifeResolution), for: .valueChanged)', '')
                     body = body.replace('\n        preferenceScope = currentPreferenceScope', '').replace('\n        DerPlayProtocolPreferences(defaults: defaults).recoverPendingTransition()', '')
+                if name == 'toggleReceiver':
+                    body = body.replace('reportedScreen = nil; primaryViewer = nil; browserGeometryResolvedForSession = false', 'reportedScreen = nil; primaryViewer = nil')
+                    body = body.replace('''            statusLabel.text = config.browserAutoAdaptBeforeCarPlay
+                ? CWL("等待接收设备打开访问地址，以识别屏幕尺寸…") : CWL("正在启动本机 CarPlay…")
+''', '            statusLabel.text = CWL("正在启动本机 CarPlay…")\n')
+                    body = body.replace('''            receiver.onBrowserGeometryResolved = { [weak self] width, height, adjusted in
+                guard let self, self.localStartupID == startupID, self.running,
+                      self.outputMode == .browser, self.followsCarScreen else { return }
+                var plan = self.liveDisplay ?? self.planDisplay(for: self.reportedScreen)
+                plan.width = width; plan.height = height; plan.ratioAdjustedForMinimumSide = adjusted
+                self.liveDisplay = plan
+                self.browserGeometryResolvedForSession = true
+                self.updateVideoAspect()
+                self.reloadVisibleSettings()
+                self.refreshDerPlayPanel()
+            }
+''', '')
+                    body = body.replace('''                    if config.browserAutoAdaptBeforeCarPlay {
+                        self.statusLabel.text = CWL("已识别接收设备屏幕，正在启动 CarPlay…")
+                    }
+''', '')
+                if name == 'toggleReceiver':
+                    body = body.replace('                if outputMode.usesInstrumentWiFi {\n                    watchInstrumentStartupRecovery(expectedSSID: config.ssid, startupID: startupID)\n                } else {\n                    watchStartupAddress(address)\n                }', '                watchStartupAddress(address)')
+                if name == 'toggleReceiver':
+                    body = body.replace('        if prepareStartupWiFi() { return }\n', '')
+                if name == 'stop':
+                    body = body.replace('        airPlayLastRecoveryAt = nil\n        airPlayRecoveryCount = 0\n        resetAirPlayProgress()\n', '')
+                    body = body.replace('        startupWiFiTicket = nil\n', '')
+                    body = body.replace('        instrumentRecoveryProbe.stop()\n        instrumentRecoveryResult = nil\n', '')
+                    body = body.replace('        runtimeNetworkRecovery.stop()\n        runtimeNetworkRecoveryWork?.cancel(); runtimeNetworkRecoveryWork = nil\n        backgroundNetworkAddress = nil\n', '')
+                # R128: user-requested Wi-Fi save gate only; retain original runtime method hashes.
+                if name == 'toggleReceiver':
+                    body = body.replace('        guard !wifiAddSavePending else {\n            statusLabel.text = CWL("请等待 Wi-Fi 预设保存完成。")\n            return\n        }\n', '')
+                if name == 'saveCurrentWiFiPreset':
+                    body = body.replace('        guard !wifiAddSavePending else { return false }\n', '')
+                # R132: only the two read-pending guards may differ from the original startup body.
+                if name == 'toggleReceiver':
+                    body = body.replace('        guard !needsNetworkDetails || !wifiPasswordReadPending else {\n            statusLabel.text = CWL("请稍候")\n            return\n        }\n', '')
+                if name == 'saveCurrentWiFiPreset':
+                    body = body.replace('        guard !wifiAddSavePending, !wifiPasswordReadPending else { return false }\n', '')
                 self.assertEqual(hashlib.sha256(body.encode()).hexdigest(),digest)
     def test_software_theme_does_not_override_system_ancestor(self):
         theme=method(CONTROLLER,'applySoftwareAppearance')
@@ -162,37 +261,43 @@ class GlassUITests(unittest.TestCase):
         self.assertIn('registerForTraitChanges([UITraitUserInterfaceStyle.self])',GLASS)
         self.assertIn('if #unavailable(iOS 17.0)',GLASS)
         self.assertIn('navigation.overrideUserInterfaceStyle = DerPlaySoftwareAppearance.saved().style',method(CONTROLLER,'revealSettings'))
-        self.assertIn('case .system: night = systemAppearanceIsDark',method(CONTROLLER,'applyAppearance'))
+        self.assertIn('let night = systemAppearanceIsDark',method(CONTROLLER,'applyAppearance'))
         self.assertIn('receiver.setNightMode(night)',method(CONTROLLER,'applyAppearance'))
         self.assertIn('UIApplication.shared.applicationState != .background',method(CONTROLLER,'applyAppearance'))
-        self.assertIn('(index == 0 && systemAppearanceIsDark)',method(CONTROLLER,'carPlayAppearancePage'))
+        self.assertIn('let night = systemAppearanceIsDark',method(CONTROLLER,'dockPositionPage'))
     def test_software_theme_storage_is_independent(self):
-        route=method(CONTROLLER,'softwareAppearancePage')
-        self.assertIn('DerPlaySoftwareAppearance.allCases',route)
+        route=method(CONTROLLER,'softwareAppearanceMenu')
+        self.assertIn('let choices: [DerPlaySoftwareAppearance] = [.dark, .light]',route)
         self.assertIn('forKey: DerPlaySoftwareAppearance.defaultsKey',route)
         self.assertIn('self?.applySoftwareAppearance()',route)
         self.assertNotIn('appearanceControl',route)
         self.assertIn('defaultsKey = "derplay.softwareAppearance"',GLASS)
-        self.assertIn('?? .system',GLASS)
+        self.assertIn('return .light',GLASS)
     def test_menu_relocation_preserves_entry_points(self):
         root=method(CONTROLLER,'rootSettingsPage')
         connection=method(CONTROLLER,'connectionSettingsPage')
-        for route in ['headUnitPage()', 'wifiPage()', 'httpsSettingsPage()', 'vehiclePage()', 'soundPage()', 'pictureRatioPage()', 'browserExperimentsPage()']:
+        for route in ['headUnitPage()', 'wifiPage()', 'httpsSettingsPage()', 'vehiclePage()', 'pictureRatioMenu()', 'browserExperimentsPage()']:
             self.assertIn(route,connection)
             self.assertNotIn(route,root)
-        for route in ['backgroundSettingsPage()', 'softwareAppearancePage()', 'derPlayIdentityPage()', 'diagnosticsPage()', 'aboutPage()']:
+        for route in ['pictureInPictureTiming', 'softwareAppearanceMenu()', 'derPlayIdentityPage()', 'aboutPage()']:
             self.assertIn(route,root)
-        self.assertEqual(root.count('.page('),5)
+        self.assertEqual(root.count('.page('),3)
+        self.assertNotIn('diagnosticsPage()',root)
+        self.assertNotIn('soundPage()',connection)
+        self.assertLess(root.index('夜间模式'), root.index('pictureInPictureTiming'))
+        self.assertNotIn('backgroundSettingsPage()', root)
         for route in ['displayPage()', 'presetsPage()', 'screensPage()']:
             self.assertNotIn(route,connection)
             self.assertNotIn(route,root)
-        self.assertIn('usagePage()',method(CONTROLLER,'aboutLinks'))
-        self.assertIn('headUnitOutputChanged()',method(CONTROLLER,'interconnectPage'))
+        self.assertIn('usagePage()',root)
+        self.assertLess(root.index('usagePage()'),root.index('夜间模式'))
+        self.assertNotIn('usagePage()',method(CONTROLLER,'aboutLinks'))
+        self.assertIn('headUnitOutputChanged()',method(CONTROLLER,'interconnectRows'))
     def test_flat_mode_specific_routes(self):
         connection=method(CONTROLLER,'connectionSettingsPage')
         self.assertIn('if needsNetworkDetails',connection)
-        self.assertIn('if !isLocalCarPlayOnly && outputMode != .airPlay',connection)
-        self.assertLess(connection.index('self.soundPage()'),connection.index('iconSizeControl'))
+        self.assertNotIn('self.soundPage()',connection)
+        self.assertIn('iconSizeControl',connection)
         self.assertIn('if !outputMode.usesInstrumentWiFi',connection)
         self.assertIn('outputMode == .browser && videoOutputSwitch.isOn',connection)
         self.assertIn('carLifeAddressField, placeholder: CWL("留空自动发现")',connection)
@@ -202,9 +307,9 @@ class GlassUITests(unittest.TestCase):
         experiments=method(CONTROLLER,'browserExperimentsPage')
         self.assertIn('autoRestartSwitch',experiments)
         self.assertIn('experimentalBrowserViewAreasKey',experiments)
-        self.assertNotIn('experimentalBrowserViewAreasKey',method(CONTROLLER,'experimentSections'))
-        ratio=method(CONTROLLER,'pictureRatioPage')
-        for token in ['ReceiverConfiguration.aspectRatios.map', 'index == 0 ? 0 : 1', 'index - 1', 'self.displaySettingChanged()', 'guard !self.running, !self.waitingForNetwork']:
+        self.assertNotIn('experimentalBrowserViewAreasKey',method(CONTROLLER,'aboutDeviceSection'))
+        ratio=method(CONTROLLER,'pictureRatioMenu')
+        for token in ['availableAspectRatios.map', 'index == 0 ? 0 : 1', 'index - 1', 'self.displaySettingChanged()', 'guard !self.running, !self.waitingForNetwork']:
             self.assertIn(token,ratio)
 
     def test_dashboard_has_no_legacy_connection_cards(self):
@@ -213,7 +318,7 @@ class GlassUITests(unittest.TestCase):
         for card in ['browserCard', 'carLifeCard', 'zeehoCard', 'cfmotoCard', 'ninebotCard', 'tailingCard', 'airPlayCard']:
             self.assertNotIn('stack.addArrangedSubview('+card+')', CONTROLLER)
         connection = method(CONTROLLER, 'connectionSettingsPage')
-        for token in ['rows.append(.view(receiverPicker))', 'rows.append(.view(airPlayRetryButton))']:
+        for token in ['carPlayRows.append(.view(receiverPicker))', 'carPlayRows.append(.view(airPlayRetryButton))']:
             self.assertIn(token, connection)
         self.assertNotIn('airPlayRoutePicker', connection)
         self.assertNotIn('SettingsSection(CWL("连接状态")', connection)
@@ -234,8 +339,9 @@ class GlassUITests(unittest.TestCase):
         self.assertIn('airPlayPicker: airPlayRoutePicker', method(CONTROLLER, 'makeDerPlayConnectionPanel'))
         self.assertIn('if state.showsAirPlayPicker', GLASS)
         self.assertIn('DerPlayHomeAirPlayPicker(picker: airPlayPicker)', GLASS)
-        self.assertIn('.allowsHitTesting(state.airPlayPickerReady)', GLASS)
-        ratio = method(CONTROLLER, 'pictureRatioPage')
+        self.assertIn('Button(action: openAirPlayPicker)', GLASS)
+        self.assertIn('.disabled(!state.airPlayPickerReady)', GLASS)
+        ratio = method(CONTROLLER, 'pictureRatioMenu')
         self.assertNotIn('预设比例', ratio)
         self.assertIn('$0.offset + 2', ratio)
         self.assertIn('pictureMenuIndex == 1', ratio)
@@ -280,11 +386,11 @@ class GlassUITests(unittest.TestCase):
         self.assertIn('if dock == .bottom',GLASS)
 
     def test_r29_primary_action_and_title(self):
-        for token in ['greaterThanOrEqualToConstant: 80', 'derPlayTitle.font = UIFont.systemFont(ofSize: 36, weight: .bold)', 'inlineVideoShadow.addSubview(inlineVideoContainer)', 'inlineVideoContainer.clipsToBounds = true']:
+        for token in ['playbackHomeSlot.heightAnchor.constraint(equalToConstant: 80)', 'derPlayTitle.font = UIFont.systemFont(ofSize: 36, weight: .bold)', 'inlineVideoShadow.addSubview(inlineVideoContainer)', 'inlineVideoContainer.clipsToBounds = true']:
             self.assertIn(token, CONTROLLER)
         body = method(CONTROLLER, 'refreshDerPlayPanel')
         for token in ['active ? CWL("停止") : CWL("启动")', 'active ? "stop.fill" : "play.fill"', 'active ? DerPlayGlassPalette.stopRed : DerPlayGlassPalette.startGreen', 'inlineVideoShadow.isHidden = !displayedVideo']:
-            self.assertIn(token, body)
+            self.assertIn(token, body + method(GLASS, "updateButtonAppearance"))
         self.assertNotIn('startButton.setTitle(', CONTROLLER)
         self.assertIn('shadowOpacity = view.traitCollection.userInterfaceStyle == .dark ? 0.65 : 0.32', GLASS)
         self.assertIn('red: 52.0 / 255, green: 199.0 / 255, blue: 89.0 / 255', GLASS)
@@ -294,7 +400,8 @@ class GlassUITests(unittest.TestCase):
         body = method(CONTROLLER, 'viewDidLoad')
         self.assertIn('derPlayTitle.font = UIFont.systemFont(ofSize: 36, weight: .bold)', body)
         self.assertNotIn('withDesign(.rounded)', body)
-        self.assertIn('DerPlayGlassPalette.shadow(derPlayTitle, radius: 9, offset: 5)', body)
+        self.assertIn('DerPlayGlassPalette.shadow(derPlayTitle, radius: 6, offset: 3)', body)
+        self.assertIn('derPlayTitle.layer.shadowOpacity = 0.16', body)
         self.assertIn('derPlayTitle.textColor = DerPlayGlassPalette.accent', body)
 
     def test_project_includes_ui(self):

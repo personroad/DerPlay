@@ -8,17 +8,22 @@ class SettingsTests(unittest.TestCase):
     def test_brand_and_release_route(self):
         self.assertIn('https://github.com/personroad/DerPlay', self.s)
         self.assertIn('name.text = "DerPlay"', self.s)
-        self.assertIn('UIApplication.shared.open(Self.releasesURL)', self.s)
+        self.assertNotIn('UIApplication.shared.open(Self.projectURL)', self.s)
         self.assertIn('Copyright © 2026 xmz28', self.s)
     def test_root_and_upstream_support(self):
-        root = self.s.split('fileprivate func rootSettingsPage()',1)[1].split('private func backgroundSettingsPage()',1)[0]
-        for item in ['MFi 身份管理','后台与画中画','软件外观','诊断与实验','关于']:
+        root = self.s.split('fileprivate func rootSettingsPage()',1)[1].split('private func softwareAppearanceMenu()',1)[0]
+        for item in ['MFi 证书管理','画中画','夜间模式','关于']:
             self.assertIn(item, root)
-        connection = self.s.split('private func connectionSettingsPage()',1)[1].split('private func pictureRatioPage()',1)[0]
-        for item in ['画面比例','仪表设置','HTTPS 设置','Wi-Fi 与网络','电池与 BMS']:
+        connection = self.s.split('private func connectionSettingsPage()',1)[1].split('private func pictureRatioMenu()',1)[0]
+        for item in ['画面比例','仪表设置','HTTPS 设置','Wi-Fi 网络','电池与 BMS']:
             self.assertIn(item, connection)
         self.assertNotIn('Wi-Fi 预设',connection)
+        self.assertNotIn('诊断与实验',root)
         self.assertNotIn('电池与 BMS',root)
+        from test_glass_ui import method
+        self.assertIn('self.aboutDeviceSection()',method(self.s,'aboutPage'))
+        for label in ['日志','设备','MFi 证书']:
+            self.assertIn('CWL("'+label+'")',method(self.s,'aboutDeviceSection'))
         self.assertNotIn('DeveloperSupportViewController()', root)
         self.assertIn('DeveloperSupportViewController()', self.s)
     def test_identity_is_not_bypass(self):
@@ -37,7 +42,7 @@ class SettingsTests(unittest.TestCase):
         self.assertIn('chooseHTTPSCertificate()', self.s)
         self.assertIn('AccessoryIdentityStore.load()', page)
         self.assertNotIn('importFromDocuments()', page)
-        self.assertIn('startButton.isEnabled = identity != nil', self.s)
+        self.assertIn('startButton.isEnabled = !derPlayIdentityImporting', self.s)
     def test_identity_copy_batch_and_diagnostics(self):
         page = self.s.split('private func derPlayIdentityPage()',1)[1].split('fileprivate func aboutPage()',1)[0]
         self.assertEqual(page.count('UIDocumentPickerViewController('), 1)

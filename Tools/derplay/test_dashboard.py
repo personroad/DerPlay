@@ -11,8 +11,8 @@ def check_dashboard(controller, surface):
         'removed device status heading': '设备状态' not in controller,
         'fixed footer': 'footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)' in controller,
         'scroll ends above footer': 'scroll.bottomAnchor.constraint(equalTo: footer.topAnchor)' in controller,
-        'primary button in footer': 'footer.addSubview(startButton)' in controller and not re.search(r'stack\.addArrangedSubview\(startButton\)', controller),
-        'minimum button height': bool(re.search(r'startButton\.heightAnchor\.constraint\(greaterThanOrEqualToConstant: (?:6\d|[7-9]\d|\d{3,})\)', controller)),
+        'primary button in footer': 'footer.addSubview(playbackHomeSlot)' in controller and 'ConnectionControlLayer(button: startButton, homeSlot: playbackHomeSlot)' in controller and not re.search(r'stack\.addArrangedSubview\(startButton\)', controller),
+        'minimum button height': 'playbackHomeSlot.heightAnchor.constraint(equalToConstant: 80)' in controller,
         'preview at top': all(f'stack.insertArrangedSubview({name}, at: 0)' in controller for name in ('inlineVideoShadow', 'derPlayPreviewPlaceholder')),
         'preserve video aspect': bool(re.search(r'display\.videoGravity\s*=\s*\.resizeAspect\b', surface)) and 'multiplier: displayAspectHeight' in controller,
         'actual video hides placeholder': 'derPlayPreviewPlaceholder.isHidden = displayedVideo' in controller,
@@ -24,7 +24,7 @@ def check_dashboard(controller, surface):
         'overlay lifecycle': all(token in controller for token in ('hideFullscreen(); hidePreviewFullscreenButton()', 'self.hidePreviewFullscreenButton()', 'self?.refreshPreviewFullscreenButton()', 'fullscreenButton.isHidden = true', 'fullscreenButton.isHidden = false', 'Timer(timeInterval: 3, repeats: false)', 'previewFullscreenTimer?.invalidate()')),
         'touch forwarding preserved': 'self?.receiver.touches(source: "local", points)' in controller and 'guard displayedVideo, fullscreenContainer == nil else { return }' in controller,
         'fullscreen exit always reachable': '        addFullscreenExitButton(to: container)' in controller and 'exit.trailingAnchor.constraint(equalTo: container.safeAreaLayoutGuide.trailingAnchor' in controller,
-        'primary action wired': 'action: #selector(toggleReceiver)' in controller,
+        'primary action wired': 'action: #selector(connectionPlaybackTapped)' in controller and 'toggleReceiver()' in controller.split('func connectionPlaybackTapped()', 1)[1].split('@objc', 1)[0],
     }
     return [name for name, ok in checks.items() if not ok]
 

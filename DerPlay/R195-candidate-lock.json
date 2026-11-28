@@ -1,0 +1,118 @@
+{
+  "checkpoint": "R195 About card grouping only",
+  "historical_lock_sha256": "8ebbfc37a719dbb6b8106cef23c6c456b84724bbb6b815d5753fa27fd56da6e9",
+  "files": {
+    "App/CarPlayAudio.swift": {
+      "r157_sha256": "14f88a93d1d2203053a349cccbfb6c8ec16b84d7887a0d138610b26401e07153",
+      "candidate_sha256": "102079edf94b03902e9593c62cf1e2820fb3371194e263a052cad39352e7e45c",
+      "reason": "R165–R184: playback route, resource ownership, admission and diagnostic handling"
+    },
+    "App/ReceiverViewController.swift": {
+      "r157_sha256": "80d1410050a0b32f3813c0211c3b71eb7dc5ce7f327e7fc34eb30fe5c00d87a2",
+      "candidate_sha256": "6514b783b006b397f3ba56c7d21df41fd7bb41e8c0ffaf77e62f3cb7ba7686d7",
+      "reason": "R163–R190: remove sound/CarPlay appearance choices, PiP order, MFi wording and About navigation; R192: reviewed UI restoration and certificate presentation; R193: general settings navigation stack suppresses playback button; R195: merge About device and links rows in one card",
+      "r191_sha256": "55a5f5ebb1348aea74b1abf91ef60ec74a37580770b9dc54ff57bc898468bd32",
+      "r192_sha256": "e7299d46139fd610c18a8ae41b787d0fd15788219b05220bbffb23656d38bddf",
+      "r194_sha256": "2ae637e54d3f45b1fe80911f4c4b47a066f176ddaedd754b7cc9bcc6d3eaa5c1"
+    },
+    "App/VideoOutputServer.swift": {
+      "r157_sha256": "2d3186836397bbe3b84a2402945075e179cb8a6a5ef680f8e0f3d8bbe38e35b0",
+      "candidate_sha256": "696fc0568ca2fba83e4f45fb1485288f4e88692e5ecf83b7abb13209dd8e9c01",
+      "reason": "R164–R187: primary browser audio subscription, authorization and service readiness"
+    },
+    "App/DerPlayGlassUI.swift": {
+      "r157_sha256": "7530fa2aef1046fe1d714e2fd325394d62aa5ead91f2e371880914c7e1cf8539",
+      "candidate_sha256": "ac3fa17165f8e35bd9729e903cdea0348e6aa164b58aeb10719b3184e2e3d932",
+      "reason": "R188–R189: settings navigation playback button and home certificate route; R192: reviewed UI restoration and certificate presentation; R193: general stack suppression; R194: square intrinsic size and symmetric visible glass insets",
+      "r191_sha256": "696f142fa1961210794099eb561d5e103d39a2bb8d4993db89b8b8b6b2220788",
+      "r192_sha256": "89e14ce9f409fb5f6875041b84ba8c51fe1cdd8bdcc611262ca38d2a98f4b519"
+    },
+    "App/BrowserReceiverPage.swift": {
+      "r157_sha256": "07ea322943b38f7fcb0b446a2447f96727f561277ba56aaf94a481777ce2e1a4",
+      "candidate_sha256": "3e9cf5c670efcf593f85d1e630ae809cb1e89cc4a07dd52fbe3f35a0fd4bb58a",
+      "reason": "R174–R175: browser audio lifecycle and authorization"
+    },
+    "App/ReceiverConfiguration.swift": {
+      "r157_sha256": "2077c5fff1bfc6721d02594d1107255831dc4e65bd48a9d18983a08304e3f194",
+      "candidate_sha256": "ad5517807dceabc8b1b67f36cee79cd1c6d22f6b0336443ff8049747868d9a2b",
+      "reason": "R176: distinguish same-device and external receiver"
+    },
+    "App/CarPlayMediaSession.swift": {
+      "r157_sha256": "3041bd8e4690008cd85adfef6c2ea0ce3d83ae1c0295bdbb49d36ae4a40b94ff",
+      "candidate_sha256": "04e620a8e465ee3bb703595b5b9547441441c372363fc780e93b46741a89702f",
+      "reason": "R167–R186: audio SETUP staging, microphone validation, recoverable error and teardown ID"
+    },
+    "App/NativeReceiver.swift": {
+      "r157_sha256": "fd14848d4ce893e3e83d5cc39c48a2c54d3dcb0dde8235601e82a9eb9fb589fa",
+      "candidate_sha256": "c3cc19c8faf13e1f6fe00be04e284d0ddef1d60b5398ee72a8cef823c836a0ad",
+      "reason": "R167–R187: diagnostic, receiver mode, error response and service readiness"
+    },
+    "App/Localization/Receiver.en.html": {
+      "r157_sha256": "018102e2f1d9f75d1cfcbbd9f0a5dc2703d6b2e1c89808012684512cfb0fe37a",
+      "candidate_sha256": "5a7e95c869e91a62eb91cb6101768fa78ccd759410e704a05117ff5e408a90a8",
+      "reason": "R174–R175: matching English browser audio lifecycle and authorization"
+    },
+    "App/Localization/Localizable.xcstrings": {
+      "r157_sha256": "431ef516ebc5998f7368174c1ca9734a40526dfa3f0ce152b076c9d2d28dc4ec",
+      "candidate_sha256": "0f9929c88cf0db42507df0ef5b132d096e2d2d12cb0d64b54207d0d70d28ad1e",
+      "reason": "R189–R190: MFi certificate terminology and About labels; R192: reviewed UI restoration and certificate presentation",
+      "r191_sha256": "1553f82048ada8a6119f9e116213362eced663f7dc4b5f8ff627d0e3dd4cb5af"
+    },
+    "App/SettingsUI.swift": {
+      "r157_sha256": "b77c15a9e8ee84fee838e6011e63bd404d3ff6599d728830e82831cd4f200c2c",
+      "r191_sha256": "b77c15a9e8ee84fee838e6011e63bd404d3ff6599d728830e82831cd4f200c2c",
+      "candidate_sha256": "f878b2b5cf4e13fc4f96ad381d0623274be6d3348c86c3844b3680899e11b671",
+      "reason": "R192: optional fixed ordering on the native PiP pull-down only; other menus unchanged"
+    }
+  },
+  "methods": {
+    "toggleReceiver": {
+      "r157_sha256": "cc3ded3ecf77735c1f8e5be29707639d41e79b7c6967229b7eacfd659ae1d0af",
+      "candidate_sha256": "eefe92e4379debea2baa58589f37455156dafc0a669915453d56e4846ec770cc",
+      "reason": "audio capability and removed preferences; external receiver flag"
+    },
+    "stop": {
+      "r157_sha256": "4d13b2d942e251e0f8fd7babdb3a050b0cab099df2c203d8c66631b238f0051a",
+      "candidate_sha256": "716bfed6bf8b9800d35b9145f03e0179bd0335c04801dd44706db85b9513e90e",
+      "reason": "certificate status wording"
+    },
+    "configureDisplay": {
+      "r157_sha256": "389cbb158d5c3b1ff681caefb6ff39c3667ee3be0b385ab7d11479486457c880",
+      "candidate_sha256": "5400ca06b96336c23e668d049aec303751439c1fd52b4ac868e3f83593c560ae",
+      "reason": "browser audio sink condition and diagnostic"
+    },
+    "appearanceChanged": {
+      "r157_sha256": "dfac0af258e5f846bbcf8786575a78bd29c554a4ab6eb5f164b0ab8b532f1711",
+      "candidate_sha256": null,
+      "reason": "removed manual CarPlay day/night setting"
+    },
+    "updatePictureInPicturePolicy": {
+      "r157_sha256": "fce94b654f643de9028ed092a7798fc578cfc19ac30caeb097c6d4ce8ba385b8",
+      "candidate_sha256": "f4bd6bfda6d21a5d3f96ab9568d86b341706543ca80013917f51f922c92812eb",
+      "reason": "inverted UI index, same enabled semantics"
+    },
+    "configureSettingsControls": {
+      "r157_sha256": "384509b4ca70da7ef34c1e3c7907da2875ff5133a1df937e874dcd5c25f66602",
+      "candidate_sha256": "1e94ae71f451ae8535f01046a72379d0bb60b500f9eb8f0a1d66a10b949770eb",
+      "reason": "removed appearance setting and preserve PiP stored value"
+    },
+    "derPlayIdentityPage": {
+      "r157_sha256": "d43ae9c4778f4ae182413788b780c58327ad27442bc43e8e0fcdf152cc967e82",
+      "candidate_sha256": "ef0853841eed5920d78a849cb75b94ffc28ecbc56d17f9d4a7ce860b576ae2c1",
+      "reason": "labels and hidden display-only fields; R192: certificate display text only",
+      "r191_sha256": "cb743da17fd94eed7f7ea80ce7f3a42635ccde7ac35ce3d12b9f000f3231a915"
+    },
+    "loadIdentity": {
+      "r157_sha256": "61f701d44dc70709513e014aeded9707b87030b18845c4afe6933c43a4131d36",
+      "candidate_sha256": "28379f84be5bed12401683e58dafd4b31338195c2738630fade1cc9129515d1a",
+      "reason": "certificate status wording; R192: certificate display text only",
+      "r191_sha256": "ef51b2f91400dfc7317ba93c285dc982b3477475884cfeb31246260b83b2e239"
+    },
+    "commitStartupSettings": {
+      "r157_sha256": "0068dd04cd2cf2acf5be4a08e8a03d35ad84975a0718ec20376ea8d285685764",
+      "candidate_sha256": "ebfae6dfb93272301b64c1630133387f6dea9074facf7e5da90605b238172491",
+      "reason": "removed sound setting and preserve PiP stored value"
+    }
+  },
+  "previous_lock_sha256": "5968fd5e06d8baff734823c0909b6cd869b2fc5b087275e3ce481755758f2304"
+}

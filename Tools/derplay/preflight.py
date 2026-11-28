@@ -2,7 +2,7 @@
 """Read-only build gate; verifies files and metadata, not iOS runtime behavior."""
 import json, pathlib, plistlib, re, sys
 root = pathlib.Path(__file__).resolve().parents[2]
-required = ['App/Info.plist','App/DerPlayIdentityDER.swift','App/DerPlayIdentityImport.swift','Tools/derplay/test_identity.py','App/DerPlayExtensionAPI.swift','App/DerPlayExtensionSession.swift','Tools/derplay/SessionSmoke.swift','Tools/derplay/verify_ipa.py','App/DerPlayUpstreamBridge.swift','App/ReceiverViewController.swift','Tools/generate_project.py','TDSCarKit.xcodeproj/project.pbxproj','LICENSE','THIRD_PARTY_NOTICES.txt','README.md','docs/derplay/home-design.jpg','DerPlay/upstream.json','.github/workflows/build-ipa.yml','.github/workflows/upstream-sync.yml']
+required = ['App/Info.plist','App/DerPlayIdentityDER.swift','App/DerPlayIdentityImport.swift','Tools/derplay/test_identity.py','App/DerPlayExtensionAPI.swift','App/DerPlayExtensionSession.swift','Tools/derplay/SessionSmoke.swift','Tools/derplay/verify_ipa.py','App/DerPlayUpstreamBridge.swift','App/ReceiverViewController.swift','DerPlay/Extensions/DisplayGeometry.swift','Tools/derplay/DisplayGeometrySmoke.swift','Tools/generate_project.py','TDSCarKit.xcodeproj/project.pbxproj','LICENSE','THIRD_PARTY_NOTICES.txt','README.md','docs/derplay/home-design.jpg','DerPlay/upstream.json','.github/workflows/build-ipa.yml','.github/workflows/upstream-sync.yml']
 for name in required:
     if not (root/name).is_file(): sys.exit('Missing: '+name)
 info=plistlib.loads((root/'App/Info.plist').read_bytes())

@@ -41,12 +41,14 @@ class IntegrityTests(unittest.TestCase):
         self.assertIn('waitingForNetwork || carLifeNegotiationTimeout != nil',method(C,'refreshDerPlayPanel'))
         for button in ['carLifeSettings','zeehoSettings','cfmotoSettings','ninebotSettings','tailingSettings']:
             self.assertIn(button+'.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true)',C)
-        for selector in ['toggleReceiver','copyVideoURL','copySecureVideoURL','toggleHTTPSAddress','showFullscreen']:
+        for selector in ['connectionPlaybackTapped','copyVideoURL','copySecureVideoURL','toggleHTTPSAddress','showFullscreen']:
             self.assertIn('#selector('+selector+')',C)
+        self.assertIn('toggleReceiver()', method(C, 'connectionPlaybackTapped'))
         self.assertIn('func startPictureInPicture()', C)
         self.assertIn('self.updatePictureInPicturePolicy()', C)
     def test_update_entry_and_feed(self):
-        for token in ['self.checkForUpdates()','self.showVersionHistory()']: self.assertIn(token,method(C,'aboutLinks'))
+        self.assertIn('self.checkForUpdates()',method(C,'aboutLinks'))
+        self.assertNotIn('self.showVersionHistory()',method(C,'aboutLinks'))
         self.assertIn('AppReleaseService().latest()',method(C,'checkForUpdates'))
         self.assertIn('VerifiedReleaseHistoryDetail',method(C,'showVersionHistory'))
         self.assertIn('navigation.pushViewController(controller, animated: true)',method(C,'presentReleaseController'))

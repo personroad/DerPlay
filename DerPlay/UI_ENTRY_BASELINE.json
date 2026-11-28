@@ -155,17 +155,20 @@
   },
   "approved_relocations": {
     ".control(CWL(\"CarPlay 外观\"), icon: (\"circle.lefthalf.filled\", .systemBlue), appearanceControl)": {
-      "reason": "迁移为独立页面",
+      "reason": "R158 重建：跟随系统昼夜模式",
       "required_tokens": [
-        "carPlayAppearancePage()",
-        "appearanceChanged()"
+        "let night = systemAppearanceIsDark",
+        "receiver.setNightMode(night)"
       ]
     },
     ".control(CWL(\"当前输出\"), icon: (\"point.3.connected.trianglepath.dotted\", .systemIndigo), headUnitOutput))": {
-      "reason": "迁移为主页互联方式",
+      "reason": "迁移为主页互联方式；R143 用户确认恢复互联模式页顶部入口及次级选择页",
       "required_tokens": [
         "interconnectPage()",
-        "HeadUnitOutput.menuOrder"
+        "interconnectRows()",
+        "HeadUnitOutput.menuOrder",
+        "self.headUnitOutputChanged()",
+        "self.videoOutputToggled()"
       ]
     },
     ".control(CWL(\"驾驶位\"), icon: (\"steeringwheel\", .systemTeal), driveControl)": {
@@ -197,10 +200,11 @@
       ]
     },
     ".page(CWL(\"Wi-Fi 与网络\"), icon: (\"wifi\", .systemBlue), detail:": {
-      "reason": "迁移至连接设置",
+      "reason": "R150 用户确认名称改为 Wi-Fi 网络，并与互联协议放在同一上方卡片",
       "required_tokens": [
-        ".page(\"Wi-Fi 与网络\"",
-        "wifiPage()"
+        ".page(CWL(\"Wi-Fi 网络\")",
+        "SettingsSection(networkRows)",
+        "self.wifiPage()"
       ]
     },
     ".page(CWL(\"Wi-Fi 预设\"), icon: (\"list.bullet\", .systemBlue), detail:": {
@@ -212,11 +216,11 @@
       ]
     },
     ".page(CWL(\"画面\"), icon: (\"rectangle.on.rectangle\", .systemGreen), detail:": {
-      "reason": "R7 画面参数直接进入连接设置",
+      "reason": "画面设置保留于连接模式，删除手动昼夜模式",
       "required_tokens": [
-        "self.pictureRatioPage()",
-        "self.carPlayAppearancePage()",
-        "self.dockPositionPage()"
+        "self.pictureRatioMenu()",
+        "self.dockPositionPage()",
+        "let night = systemAppearanceIsDark"
       ]
     },
     ".page(CWL(\"请我喝杯咖啡\"), icon: (\"cup.and.saucer.fill\", .systemOrange))": {
@@ -224,26 +228,25 @@
       "required_tokens": []
     },
     ".page(CWL(\"赞赏与支持\"), icon: (\"hands.sparkles.fill\", .systemOrange))": {
-      "reason": "迁移至开源致谢，原名单页保留",
+      "reason": "R219 用户要求移除关于页可选致谢入口；保留历史贡献者控制器及版权、许可证文件",
       "required_tokens": [
-        "原项目贡献者",
-        "ContributionsViewController()"
+        "ContributionsViewController()",
+        "AGPL-3.0",
+        "Copyright © 2026 xmz28"
       ]
     },
     ".page(CWL(\"输出设置\"), icon: (\"slider.horizontal.3\", .systemGray))": {
-      "reason": "R7 协议专属入口或直接可编辑字段",
+      "reason": "R150 连接模式分组中按互联协议及 CarPlay 设置重组原输出设置入口",
       "required_tokens": [
-        ".page(\"浏览器设置\"",
-        ".page(\"AirPlay 设置\"",
-        ".page(\"仪表设置\"",
-        "carLifeAddressField",
-        "self.headUnitPage()"
+        ".page(CWL(\"浏览器设置\")",
+        "self.headUnitPage()",
+        ".page(CWL(\"AirPlay 设置\")"
       ]
     },
     ".control(CWL(\"画面尺寸\"), icon: (\"aspectratio.fill\", .systemGreen), sizeModeControl)": {
-      "reason": "Build 10 R7 approved menu relocation",
+      "reason": "Build 10 R7 approved menu relocation; R91 user-approved inline native menu.",
       "required_tokens": [
-        "private func pictureRatioPage()",
+        "private func pictureRatioMenu()",
         "self.sizeModeControl.selectedSegmentIndex = index == 0 ? 0 : 1"
       ]
     },
@@ -255,17 +258,16 @@
       ]
     },
     ".page(CWL(\"声音\"), icon: (\"speaker.wave.2.fill\", .systemOrange), detail:": {
-      "reason": "Build 10 R7 approved menu relocation",
+      "reason": "删除独立声音页面",
       "required_tokens": [
-        ".page(\"声音设置\"",
-        "self.soundPage()",
-        "!isLocalCarPlayOnly"
+        "func supportsCarPlayAudio(outputPort:",
+        "config.browserAudio = config.audioEnabled"
       ]
     },
     ".page(CWL(\"车辆\"), icon: (\"car.fill\", .systemTeal))": {
-      "reason": "Build 10 R7 approved menu relocation",
+      "reason": "R150 页面分组调整后保留车辆设置入口",
       "required_tokens": [
-        ".page(\"车辆设置\"",
+        "CWL(\"车辆设置\")",
         "self.vehiclePage()"
       ]
     },
@@ -347,17 +349,12 @@
       ],
       "reason": "R30 icon color only"
     },
-    ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemGreen), resolutionControl))": {
-      "required_tokens": [
-        ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemBlue), resolutionControl))"
-      ],
-      "reason": "R30 icon color only"
-    },
     ".page(CWL(\"诊断与实验\"), icon: (\"stethoscope\", .systemTeal))": {
-      "reason": "R42 approved icon color only",
+      "reason": "R190 删除页面并迁移设备信息、日志",
       "required_tokens": [
-        ".page(CWL(\"诊断与实验\"), icon: (\"stethoscope\", .systemRed))",
-        "self.diagnosticsPage()"
+        "self.aboutDeviceSection()",
+        "self.logPage()",
+        "iPadConnectionSections()"
       ]
     },
     ".externalLink(CWL(\"GitHub 项目\"), icon: (\"chevron.left.forwardslash.chevron.right\", .systemIndigo))": {
@@ -380,6 +377,98 @@
       "reason": "R45 vehicle menu artwork only",
       "required_tokens": [
         "icon: vehicleSettingsIcon, carButtonSwitch"
+      ]
+    },
+    ".action(CWL(\"版本记录\"), icon: (\"clock.arrow.circlepath\", .systemPurple))": {
+      "reason": "R69 user explicitly removed About menu history entry; retain internal release history implementation",
+      "required_tokens": [
+        "private func showVersionHistory()",
+        "VerifiedReleaseHistoryDetail"
+      ]
+    },
+    ".control(CWL(\"画中画开启时机\"), icon: (\"pip.fill\", .systemIndigo), pictureInPictureTiming)": {
+      "reason": "R189 通用设置画中画开关菜单排序调整",
+      "required_tokens": [
+        ".control(CWL(\"画中画\")",
+        "pictureInPictureTiming.selectedSegmentIndex == 0"
+      ]
+    },
+    ".control(CWL(\"锁屏与后台继续运行\"), icon: (\"lock.fill\", .systemPurple), keepAliveSwitch)": {
+      "reason": "R93 用户批准配置及说明迁移",
+      "required_tokens": [
+        "defaults.set(true, forKey: \"backgroundKeepAlive\")",
+        "pictureInPicture.stop(); keepAlive.stop()"
+      ]
+    },
+    ".info(CWL(\"使用说明\"), \"全宽适合本机 1600×770 仪表。直传兼容性待实测，黑屏时改回兼容转码。25 FPS 自动使用转码。锁屏时暂停手机预览，后台保持需开启。\"))": {
+      "reason": "R93 用户批准配置及说明迁移",
+      "required_tokens": [
+        ".info(CWL(\"使用说明\"), \"全宽适合本机 1600×770 仪表。直传兼容性待实测，黑屏时改回兼容转码。25 FPS 自动使用转码。锁屏时暂停手机预览，后台保持默认开启。\"))"
+      ]
+    },
+    ".control(CWL(\"清晰度\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemBlue), resolutionControl))": {
+      "required_tokens": [
+        ".control(CWL(\"清晰度\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemBlue), resolutionControl))",
+        "SettingsSection(CWL(\"CarPlay 设置\")",
+        "actualOutputResolutionLabel(for: previewPlan)"
+      ],
+      "reason": "R30 icon color only"
+    },
+    ".control(followsCarScreen ? CWL(\"最高分辨率\") : CWL(\"分辨率\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemGreen), resolutionControl))": {
+      "reason": "R150 用户确认最高分辨率改为清晰度档位，并增加实际输出分辨率预览",
+      "required_tokens": [
+        ".control(CWL(\"清晰度\"), icon: (\"arrow.up.left.and.arrow.down.right\", .systemBlue), resolutionControl))",
+        "CWL(\"实际输出分辨率\")",
+        "DisplayGeometry.fit"
+      ]
+    },
+    ".action(CWL(\"测试本机传输能力\"), icon: (\"checkmark.shield.fill\", .systemPink), detail:": {
+      "reason": "R190 删除实验入口，保留底层诊断",
+      "required_tokens": [
+        "func testSameDeviceTransport()",
+        "func aboutDeviceSection()"
+      ]
+    },
+    ".action(output.title, icon: (icons[output.rawValue], .systemOrange))": {
+      "reason": "R163-R164 删除独立声音选择，能力与路由分离",
+      "required_tokens": [
+        "func supportsCarPlayAudio(outputPort:",
+        "config.browserAudio = config.audioEnabled"
+      ]
+    },
+    ".control(\"选择耳机或扬声器\", icon: (\"headphones\", .systemOrange), audioRoutePicker)": {
+      "reason": "用户要求 iOS 原生输出选择，不设置独立音频选择器",
+      "required_tokens": [
+        "func supportsCarPlayAudio(outputPort:",
+        "audioRouteDescription"
+      ]
+    },
+    ".info(\"当前声音路由\", audioRouteDescription)": {
+      "reason": "删除独立声音页面；保留诊断",
+      "required_tokens": [
+        "private var audioRouteDescription: String",
+        "route=\\(audioRouteDescription)"
+      ]
+    },
+    ".info(CWL(\"MFi 身份\"), identity != nil ? CWL(\"已载入\") : CWL(\"未载入\"))": {
+      "reason": "R190 改名并移入关于",
+      "required_tokens": [
+        ".info(CWL(\"MFi 证书\"), identity != nil",
+        "self.aboutDeviceSection()"
+      ]
+    },
+    ".info(CWL(\"声音输出\"), CWL(\"由 iPhone 输出\"))": {
+      "reason": "删除独立声音选择，保留能力判断",
+      "required_tokens": [
+        "func supportsCarPlayAudio(outputPort:",
+        "config.browserAudio = config.audioEnabled"
+      ]
+    },
+    ".info(CWL(\"浏览器页面\"), BrowserReceiverPage.version)": {
+      "reason": "R190 删除诊断页面，不展示内部浏览器版本",
+      "required_tokens": [
+        "func aboutDeviceSection()",
+        "func browserExperimentsPage()"
       ]
     }
   }

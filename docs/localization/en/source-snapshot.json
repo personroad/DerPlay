@@ -28,7 +28,7 @@
   "App/NinebotProtocol.swift": "6364cd2070ceecb9e7d7e0d3572d93bde0d8e1b6a286475c764ee152b2c79b34",
   "App/NinebotUDPSocket.swift": "60defc338ad573adc688311f7a2ccaea43a29f0b450798726f6ad4338ace97fb",
   "App/ReceiverConfiguration.swift": "cd8f3e0ca022f661345f25975ec6a18af814a8f633c88906e1e766d016ed9fb4",
-  "App/ReceiverViewController.swift": "b83efefa5ced6887d449a82e3604111baad105cc37b340431c7f16c8e266e52f",
+  "App/ReceiverViewController.swift": "4b1dac663eb8da758dd33d3b6c1326a0b8f29f3576abe61f2c202f94c83d53b7",
   "App/SameDeviceProbe.swift": "f135b0e41c424918ec636e1e3c4af5e705aba9aa30e84f22e63b3c452c8892de",
   "App/SettingsUI.swift": "e06f9eea2db00ce4dab2abca1daa8bbe1fb66e1e6f4d2f43c5723a99662f991f",
   "App/TailingConnection.swift": "85edbfa81a640dbbbc9de5a48e3025fa2347ad1fa691020c7a9515166cd92be0",
@@ -41,5 +41,6 @@
   "App/ZeehoOutput.swift": "83373dbd335b1928385cc06ad6d481348a943d700d73e524428048aaf1bd612f",
   "Sources/TDSCarKitCore/Binary.swift": "2ba4bc4a3d15a8f00ba608cf6c8a5262f8ace447b68d1c491e550dd278af0e95",
   "Sources/TDSCarKitCore/ScreenStream.swift": "3b117710a543b58367303fb51501e715e92fdc62e6e26a26a7e2fd7dbcb84725",
-  "Sources/TDSCarKitCore/VideoCodec.swift": "dd88802671963181fba2f68446f29f20b6f0ceee038f315ad7c8e93f3ed08d07"
+  "Sources/TDSCarKitCore/VideoCodec.swift": "dd88802671963181fba2f68446f29f20b6f0ceee038f315ad7c8e93f3ed08d07",
+  "App/DerPlayGlassUI.swift": "2361f08c2bc99894cb76acbcfaee328925ea291c0c654ba08cd843bbb9b396d3"
 }

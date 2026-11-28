@@ -1,36 +1,43 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "请选择 AirPlay 设备": {
+    "请停止 CarPlay 后再修改": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please select an AirPlay device"
-          }
-        },
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请停止 CarPlay 后再修改"}},
+        "en": {"stringUnit": {"state": "translated", "value": "Stop CarPlay before changing this setting"}}
+      }
+    },
+    "访问地址已复制": {
+      "extractionState": "manual",
+      "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请选择 AirPlay 设备"
+            "value": "访问地址已复制"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access address copied"
           }
         }
       }
     },
-    "正在连接 AirPlay…": {
+    "未获取有效屏幕尺寸，请重新启动并在接收设备打开全屏页面。": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecting to AirPlay…"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在连接 AirPlay…"
+            "value": "未获取有效屏幕尺寸，请重新启动并在接收设备打开全屏页面。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No valid screen size received. Restart and open the receiver page in fullscreen."
           }
         }
       }
@@ -420,6 +427,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "AirPlay 播放器：item={1} time={2} 外部视频={3} 路由={4} 等待={5} 错误={6}"
+          }
+        }
+      }
+    },
+    "AirPlay 播放时间未推进，可以重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay playback time is not advancing. You can retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay 播放时间未推进，可以重试。"
           }
         }
       }
@@ -1339,6 +1362,57 @@
         }
       }
     },
+    "CarPlay窗口已开启": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CarPlay window is open"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CarPlay窗口已开启"
+          }
+        }
+      }
+    },
+    "CoreAccessories 传输测试失败：{1}": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CoreAccessories transport test failed: {1}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CoreAccessories 传输测试失败：{1}"
+          }
+        }
+      }
+    },
+    "CoreAccessories 已创建并发布 protocol-4 iAP2 endpoint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CoreAccessories created and published a protocol-4 iAP2 endpoint"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CoreAccessories 已创建并发布 protocol-4 iAP2 endpoint"
+          }
+        }
+      }
+    },
     "DerPlay HTTPS 根证书": {
       "extractionState": "manual",
       "localizations": {
@@ -1420,40 +1494,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "DerPlay 触控屏"
-          }
-        }
-      }
-    },
-    "CoreAccessories 传输测试失败：{1}": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CoreAccessories transport test failed: {1}"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CoreAccessories 传输测试失败：{1}"
-          }
-        }
-      }
-    },
-    "CoreAccessories 已创建并发布 protocol-4 iAP2 endpoint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CoreAccessories created and published a protocol-4 iAP2 endpoint"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CoreAccessories 已创建并发布 protocol-4 iAP2 endpoint"
           }
         }
       }
@@ -3871,6 +3911,22 @@
         }
       }
     },
+    "九号 4.3 寸": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ninebot 4.3-inch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "九号 4.3 寸"
+          }
+        }
+      }
+    },
     "九号 4.3 寸 JPEG：已发送 {1} 帧，发送丢弃 {2} 帧，当前 {3} 字节": {
       "extractionState": "manual",
       "localizations": {
@@ -4207,6 +4263,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "事件通道已关闭"
+          }
+        }
+      }
+    },
+    "互联模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interconnection mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互联模式"
+          }
+        }
+      }
+    },
+    "仅对当前互联方式生效": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to current connection mode only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅对当前互联方式生效"
           }
         }
       }
@@ -4748,6 +4838,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 HTTP 接收页"
+          }
+        }
+      }
+    },
+    "使用仪表时先加入仪表 Wi-Fi，再按互联模式中的仪表说明操作。CarLife 先打开车机上的 CarLife；AirPlay 在互联模式中选择接收设备。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For an instrument display, join its Wi-Fi first, then follow the instrument instructions under Interconnection mode. For CarLife, open CarLife on the head unit first. For AirPlay, select a receiving device under Interconnection mode."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用仪表时先加入仪表 Wi-Fi，再按互联模式中的仪表说明操作。CarLife 先打开车机上的 CarLife；AirPlay 在互联模式中选择接收设备。"
           }
         }
       }
@@ -5932,6 +6039,22 @@
         }
       }
     },
+    "反馈与建议": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback & Suggestions"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈与建议"
+          }
+        }
+      }
+    },
     "发布构建 {1}": {
       "extractionState": "manual",
       "localizations": {
@@ -6973,6 +7096,57 @@
         }
       }
     },
+    "后台音频已中断": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background audio interrupted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台音频已中断"
+          }
+        }
+      }
+    },
+    "后台音频恢复次数已达上限": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background audio recovery limit reached"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台音频恢复次数已达上限"
+          }
+        }
+      }
+    },
+    "后台音频暂不可用，iOS 可能挂起会话": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background audio is temporarily unavailable; iOS may suspend the session."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台音频暂不可用，iOS 可能挂起会话"
+          }
+        }
+      }
+    },
     "启动 CarPlay 后即可打开上方地址。": {
       "extractionState": "manual",
       "localizations": {
@@ -7190,6 +7364,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "回到 DerPlay，在「Wi-Fi 预设」选择刚连的网络。第一次用，在「Wi-Fi 与网络」添加。"
+          }
+        }
+      }
+    },
+    "回到 DerPlay，在「互联模式 → Wi-Fi 与网络」读取或填写当前网络，返回时保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return to DerPlay, read or enter the current network under Interconnection mode → Wi-Fi & Network, then go back to save."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到 DerPlay，在「互联模式 → Wi-Fi 与网络」读取或填写当前网络，返回时保存。"
           }
         }
       }
@@ -9104,6 +9295,23 @@
         }
       }
     },
+    "开启": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启"
+          }
+        }
+      }
+    },
     "开启后，同一局域网的浏览器可以查看并触控 CarPlay。": {
       "extractionState": "manual",
       "localizations": {
@@ -9168,6 +9376,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "开放网络（无密码）"
+          }
+        }
+      }
+    },
+    "连接协议": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection protocol"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接协议"
           }
         }
       }
@@ -9253,6 +9478,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前安装 {1}（{2}）"
+          }
+        }
+      }
+    },
+    "当前暂无可用的新版本。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No new version is currently available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前暂无可用的新版本。"
           }
         }
       }
@@ -9664,6 +9906,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开设置"
+          }
+        }
+      }
+    },
+    "打开项目主页": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Project Homepage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开项目主页"
           }
         }
       }
@@ -10667,6 +10926,23 @@
         }
       }
     },
+    "无法加入 Wi-Fi，请在系统设置中手动连接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to join Wi-Fi. Connect manually in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加入 Wi-Fi，请在系统设置中手动连接。"
+          }
+        }
+      }
+    },
     "无法启动本机 CarPlay：{1}": {
       "extractionState": "manual",
       "localizations": {
@@ -11075,6 +11351,38 @@
         }
       }
     },
+    "春风 5 寸": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CFMOTO 5-inch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "春风 5 寸"
+          }
+        }
+      }
+    },
+    "春风 6.2 寸": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CFMOTO 6.2-inch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "春风 6.2 寸"
+          }
+        }
+      }
+    },
     "昵称与展示": {
       "localizations": {
         "en": {
@@ -11188,6 +11496,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无公开版本"
+          }
+        }
+      }
+    },
+    "暂无新版本": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No New Version"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无新版本"
           }
         }
       }
@@ -11955,6 +12280,22 @@
         }
       }
     },
+    "极核 AE2 Pro 5 寸": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZEEHO AE2 Pro 5-inch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "极核 AE2 Pro 5 寸"
+          }
+        }
+      }
+    },
     "极核 AE4 MAX2+ 6.2 寸": {
       "extractionState": "manual",
       "localizations": {
@@ -11968,6 +12309,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "极核 AE4 MAX2+ 6.2 寸"
+          }
+        }
+      }
+    },
+    "极核 SE+ 5/5.5 寸": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZEEHO SE+ 5/5.5-inch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "极核 SE+ 5/5.5 寸"
           }
         }
       }
@@ -12498,23 +12855,6 @@
         }
       }
     },
-    "正在显示 CarPlay": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Displaying CarPlay"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在显示 CarPlay"
-          }
-        }
-      }
-    },
     "正在更新解析…": {
       "extractionState": "manual",
       "localizations": {
@@ -12630,6 +12970,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取照片…"
+          }
+        }
+      }
+    },
+    "正在连接 AirPlay…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to AirPlay…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接 AirPlay…"
           }
         }
       }
@@ -13244,6 +13601,23 @@
         }
       }
     },
+    "点击复制访问地址:{1}": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to copy access address:{1}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击复制访问地址:{1}"
+          }
+        }
+      }
+    },
     "版本 {1}（{2}）": {
       "extractionState": "manual",
       "localizations": {
@@ -13393,6 +13767,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "由接收画面的设备播放。画面自动播放后，若网页提示「开启声音」，点一下即可。"
+          }
+        }
+      }
+    },
+    "触感反馈": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haptic Feedback"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触感反馈"
           }
         }
       }
@@ -13737,6 +14128,23 @@
         }
       }
     },
+    "确认选对仪表型号、仪表已打开投屏，并在「互联模式 → 仪表设置」核对仪表 IP。先结束其他投屏。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm the correct instrument model is selected, casting is enabled on the instrument, and its IP address is correct under Interconnection mode → Instrument settings. End any other casting sessions first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认选对仪表型号、仪表已打开投屏，并在「互联模式 → 仪表设置」核对仪表 IP。先结束其他投屏。"
+          }
+        }
+      }
+    },
     "确认选对仪表型号、仪表已打开投屏，并在「输出设置」核对仪表 IP。先结束其他投屏。": {
       "extractionState": "manual",
       "localizations": {
@@ -13988,6 +14396,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "系统媒体服务重置"
+          }
+        }
+      }
+    },
+    "系统已处理连接请求，请确认 Wi-Fi 后手动启动。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system processed the request. Verify Wi-Fi and start manually."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统已处理连接请求，请确认 Wi-Fi 后手动启动。"
+          }
+        }
+      }
+    },
+    "系统未建议恢复后台音频，请在安全时手动重新启动连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system did not recommend resuming background audio. Restart the connection manually when safe."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统未建议恢复后台音频，请在安全时手动重新启动连接"
           }
         }
       }
@@ -15719,6 +16161,23 @@
         }
       }
     },
+    "请在互联模式的「Wi-Fi 与网络」确认当前网络。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the current network under Interconnection mode → Wi-Fi & Network."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在互联模式的「Wi-Fi 与网络」确认当前网络。"
+          }
+        }
+      }
+    },
     "请在系统设置中允许 DerPlay 添加照片，然后重试。": {
       "localizations": {
         "en": {
@@ -15765,6 +16224,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请填写 DuckDNS 域名和 Token。"
+          }
+        }
+      }
+    },
+    "请填写有效的 Wi-Fi 名称和密码。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid Wi-Fi name and password."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请填写有效的 Wi-Fi 名称和密码。"
           }
         }
       }
@@ -15937,6 +16413,23 @@
         }
       }
     },
+    "请等待系统 Wi-Fi 连接请求完成。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for the system Wi-Fi request to finish."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请等待系统 Wi-Fi 连接请求完成。"
+          }
+        }
+      }
+    },
     "请说明当前昵称和修改内容。漏登、累计有误或需要合并时，可提供支付截图或订单号，并遮挡无关信息。": {
       "localizations": {
         "en": {
@@ -16068,6 +16561,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入有效的极核仪表 IPv4 地址，与本机 IP 不同。"
+          }
+        }
+      }
+    },
+    "请选择 AirPlay 设备": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Please select an AirPlay device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择 AirPlay 设备"
           }
         }
       }
@@ -16305,6 +16815,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "读取本机身份"
+          }
+        }
+      }
+    },
+    "调整 {1} 默认设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust {1} Default Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整 {1} 默认设置"
+          }
+        }
+      }
+    },
+    "调整{1}默认设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust {1} Default Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整{1}默认设置"
+          }
+        }
+      }
+    },
+    "调整本机 CarPlay 默认设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adjust CarPlay on This iPhone Default Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整本机 CarPlay 默认设置"
           }
         }
       }
@@ -16780,6 +17341,23 @@
         }
       }
     },
+    "车机连同一个 Wi-Fi。在「互联模式」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the head unit to the same Wi-Fi. Select Browser under Interconnection mode, start CarPlay, then open the HTTP address shown on the home screen on the head unit."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "车机连同一个 Wi-Fi。在「互联模式」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。"
+          }
+        }
+      }
+    },
     "车机连同一个 Wi-Fi。在「当前输出」选浏览器，启动 CarPlay，再用车机打开首页显示的 HTTP 地址。": {
       "extractionState": "manual",
       "localizations": {
@@ -16981,6 +17559,23 @@
         }
       }
     },
+    "返回前台恢复后台音频": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recover background audio on return to foreground"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回前台恢复后台音频"
+          }
+        }
+      }
+    },
     "返回自动保存。同名网络会更新原预设，兼容信道通常保持 36。": {
       "extractionState": "manual",
       "localizations": {
@@ -17146,6 +17741,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接数过多，请稍后再试"
+          }
+        }
+      }
+    },
+    "连接此 Wi-Fi": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Join this Wi-Fi"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接此 Wi-Fi"
           }
         }
       }
@@ -17518,6 +18130,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "锁屏前，请在 iPhone「设置 › 通用 › CarPlay › DerPlay」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"
+          }
+        }
+      }
+    },
+    "锁屏前，请在 iPhone「设置 › 通用 › CarPlay › 对应的车辆名称」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before locking your iPhone, enable Allow CarPlay While Locked for the vehicle in Settings › General › CarPlay. Background operation uses additional battery. Picture in Picture shows live video only. To start it when leaving the app, enable Start PiP Automatically in Settings › General › Picture in Picture."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁屏前，请在 iPhone「设置 › 通用 › CarPlay › 对应的车辆名称」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"
           }
         }
       }
@@ -18014,98 +18643,1396 @@
         }
       }
     },
-    "九号 4.3 寸": {
+    "通用": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ninebot 4.3-inch"
+            "value": "General"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "九号 4.3 寸"
+            "value": "通用"
           }
         }
       }
     },
-    "极核 SE+ 5/5.5 寸": {
+    "通用设置": {
+      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ZEEHO SE+ 5/5.5-inch"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "极核 SE+ 5/5.5 寸"
+            "value": "通用设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General Settings"
           }
         }
       }
     },
-    "极核 AE2 Pro 5 寸": {
+    "连接模式": {
+      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ZEEHO AE2 Pro 5-inch"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "极核 AE2 Pro 5 寸"
+            "value": "连接模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Mode"
           }
         }
       }
     },
-    "春风 5 寸": {
+    "互联协议": {
+      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CFMOTO 5-inch"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "春风 5 寸"
+            "value": "互联协议"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interconnection Protocol"
           }
         }
       }
     },
-    "春风 6.2 寸": {
+    "Wi-Fi 网络": {
+      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CFMOTO 6.2-inch"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "春风 6.2 寸"
+            "value": "Wi-Fi 网络"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi Network"
           }
         }
       }
     },
-    "反馈与建议": {
+    "CarPlay 设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CarPlay 设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CarPlay Settings"
+          }
+        }
+      }
+    },
+    "昼夜模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昼夜模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Day/Night Mode"
+          }
+        }
+      }
+    },
+    "Dock 栏": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock 栏"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock"
+          }
+        }
+      }
+    },
+    "清晰度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清晰度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
+        }
+      }
+    },
+    "实际输出分辨率": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实际输出分辨率"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actual Output Resolution"
+          }
+        }
+      }
+    },
+    "连接后识别": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接后识别"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detected after connecting"
+          }
+        }
+      }
+    },
+    "· 已按最低边长调整": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· 已按最低边长调整"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Adjusted to minimum edge"
+          }
+        }
+      }
+    },
+    "等待接收设备打开访问地址，以识别屏幕尺寸…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待接收设备打开访问地址，以识别屏幕尺寸…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the receiver to open the access address and report its screen size…"
+          }
+        }
+      }
+    },
+    "未检测到接收屏幕尺寸，使用默认画面比例启动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未检测到接收屏幕尺寸，使用默认画面比例启动"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver screen size was not detected; starting with the default aspect ratio"
+          }
+        }
+      }
+    },
+    "已识别接收设备屏幕，正在启动 CarPlay…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已识别接收设备屏幕，正在启动 CarPlay…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver screen detected; starting CarPlay…"
+          }
+        }
+      }
+    },
+    "已识别接收设备屏幕 {1}×{2}，正在准备 CarPlay…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已识别接收设备屏幕 {1}×{2}，正在准备 CarPlay…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiver screen {1}×{2} detected; preparing CarPlay…"
+          }
+        }
+      }
+    },
+    "等待接收设备屏幕尺寸超时，使用当前默认画面比例启动 CarPlay。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待接收设备屏幕尺寸超时，使用当前默认画面比例启动 CarPlay。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out waiting for the receiver screen size; starting CarPlay with the current default aspect ratio."
+          }
+        }
+      }
+    },
+    "接收屏幕尺寸无法用于画面适配，使用默认画面比例启动。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接收屏幕尺寸无法用于画面适配，使用默认画面比例启动。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The receiver screen size could not be used; starting with the default aspect ratio."
+          }
+        }
+      }
+    },
+    "浏览器输出尺寸更新未完成，使用默认画面比例启动 CarPlay。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浏览器输出尺寸更新未完成，使用默认画面比例启动 CarPlay。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not update browser output dimensions; starting CarPlay with the default aspect ratio."
+          }
+        }
+      }
+    },
+    "已在 CarPlay 握手前识别接收屏幕 {1}×{2}，输出画面调整为 {3}×{4}。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 CarPlay 握手前识别接收屏幕 {1}×{2}，输出画面调整为 {3}×{4}。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detected receiver screen {1}×{2} before the CarPlay handshake; output adjusted to {3}×{4}."
+          }
+        }
+      }
+    },
+    " · 已按最低边长调整": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · 已按最低边长调整"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · Adjusted to minimum edge"
+          }
+        }
+      }
+    },
+    "请在接收设备浏览器点全屏按钮，让页面占满屏幕后再继续…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在接收设备浏览器点全屏按钮，让页面占满屏幕后再继续…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the receiver browser full-screen button and let the page fill the screen to continue…"
+          }
+        }
+      }
+    },
+    "当前协议无法保持所选画面比例，请选择其他比例或连接模式。": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Feedback & Suggestions"
+            "value": "This connection cannot preserve the selected aspect ratio. Choose another ratio or connection mode."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "反馈与建议"
+            "value": "当前协议无法保持所选画面比例，请选择其他比例或连接模式。"
+          }
+        }
+      }
+    },
+    "当前协议不支持此画面比例": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aspect ratio unsupported by this connection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前协议不支持此画面比例"
+          }
+        }
+      }
+    },
+    " · 已自动提高清晰度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · Clarity automatically increased"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · 已自动提高清晰度"
+          }
+        }
+      }
+    },
+    "浏览器输出尺寸更新失败，请重新连接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser output size update failed. Please reconnect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浏览器输出尺寸更新失败，请重新连接。"
+          }
+        }
+      }
+    },
+    "清晰度档位限定输出宽高上限；画面比例决定画布形状，短边至少 320 像素，实际输出尺寸见下方。极端比例会在协议能力内自动提高清晰度，无法保持比例时不启动。2K/4K 会增加发热和带宽。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clarity tiers set preferred width and height limits. The aspect ratio determines the canvas shape; the short edge must be at least 320 pixels. Extreme ratios automatically increase clarity within connection limits, or refuse to start if unsupported. 2K/4K increase heat and bandwidth."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清晰度档位限定输出宽高上限；画面比例决定画布形状，短边至少 320 像素，实际输出尺寸见下方。极端比例会在协议能力内自动提高清晰度，无法保持比例时不启动。2K/4K 会增加发热和带宽。"
+          }
+        }
+      }
+    },
+    "需要导入 MFi 证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要导入 MFi 证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi certificate import required"
+          }
+        }
+      }
+    },
+    "MFi 证书管理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi 证书管理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi Certificate Management"
+          }
+        }
+      }
+    },
+    "证书状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书状态"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certificate Status"
+          }
+        }
+      }
+    },
+    "导入 MFi 证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入 MFi 证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import MFi Certificate"
+          }
+        }
+      }
+    },
+    "重新导入 MFi 证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新导入 MFi 证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reimport MFi Certificate"
+          }
+        }
+      }
+    },
+    "重新检测证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新检测证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recheck Certificate"
+          }
+        }
+      }
+    },
+    "清除已导入证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除已导入证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Imported Certificate"
+          }
+        }
+      }
+    },
+    "MFi 证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi 证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi Certificate"
+          }
+        }
+      }
+    },
+    "MFi 证书验证通过并已保存到本机 Keychain": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi 证书验证通过并已保存到本机 Keychain"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi certificate verified and saved to the local Keychain"
+          }
+        }
+      }
+    },
+    "已从 Keychain 载入 MFi 证书，ECDSA 自检通过": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 Keychain 载入 MFi 证书，ECDSA 自检通过"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi certificate loaded from Keychain; ECDSA self-check passed"
+          }
+        }
+      }
+    },
+    "已从内置资源载入 MFi 证书，ECDSA 自检通过": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从内置资源载入 MFi 证书，ECDSA 自检通过"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi certificate loaded from bundled resources; ECDSA self-check passed"
+          }
+        }
+      }
+    },
+    "请通过设置中的 MFi 证书管理导入合法证书。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请通过设置中的 MFi 证书管理导入合法证书。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import a valid MFi certificate in Settings → MFi Certificate Management."
+          }
+        }
+      }
+    },
+    "无法保存证书导入结果：{1}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存证书导入结果：{1}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to save certificate import result: {1}"
+          }
+        }
+      }
+    },
+    "选择完整的两个或三个证书及私钥文件，自动识别格式。仅在本机处理合法认证材料；本地自检通过不代表车机认证成功。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择完整的两个或三个证书及私钥文件，自动识别格式。仅在本机处理合法认证材料；本地自检通过不代表车机认证成功。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select the complete set of two or three certificate and private key files. Formats are detected automatically. Only legitimate materials are processed locally; a local self-check does not confirm vehicle authentication."
+          }
+        }
+      }
+    },
+    "连接期间不能重新载入证书。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接期间不能重新载入证书。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The certificate cannot be reloaded while connected."
+          }
+        }
+      }
+    },
+    "证书检测": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书检测"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certificate Check"
+          }
+        }
+      }
+    },
+    "未找到有效的本机证书。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到有效的本机证书。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No valid local certificate found."
+          }
+        }
+      }
+    },
+    "本地证书已载入，仍需实际连接验证。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地证书已载入，仍需实际连接验证。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local certificate loaded; an actual connection is still required for verification."
+          }
+        }
+      }
+    },
+    "连接期间不能清除证书。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接期间不能清除证书。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The certificate cannot be cleared while connected."
+          }
+        }
+      }
+    },
+    "清除证书？": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除证书？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Certificate?"
+          }
+        }
+      }
+    },
+    "清除本机保存的证书后，需要重新导入才能启动。原始文件不会被删除。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除本机保存的证书后，需要重新导入才能启动。原始文件不会被删除。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After clearing the locally stored certificate, import it again to start. Original files will not be deleted."
+          }
+        }
+      }
+    },
+    "当前无法替换证书。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前无法替换证书。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The certificate cannot be replaced right now."
+          }
+        }
+      }
+    },
+    "证书验证或本机保存失败，原有证书未被替换。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书验证或本机保存失败，原有证书未被替换。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certificate verification or local storage failed. The previous certificate was not replaced."
+          }
+        }
+      }
+    },
+    "MFi：导入失败，未替换原有证书": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi：导入失败，未替换原有证书"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MFi: import failed; previous certificate retained"
+          }
+        }
+      }
+    },
+    "请选择一组完整的两个或三个证书及私钥文件。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择一组完整的两个或三个证书及私钥文件。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select one complete set of two or three certificate and private key files."
+          }
+        }
+      }
+    },
+    "缺少 DER PKCS#7 证书链文件。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少 DER PKCS#7 证书链文件。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing DER PKCS#7 certificate chain."
+          }
+        }
+      }
+    },
+    "缺少支持的 P-256 私钥文件。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少支持的 P-256 私钥文件。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing supported P-256 private key."
+          }
+        }
+      }
+    },
+    "X9.63 私钥需要同时选择 DER 叶证书文件。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "X9.63 私钥需要同时选择 DER 叶证书文件。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select the DER leaf certificate together with the X9.63 private key."
+          }
+        }
+      }
+    },
+    "无法读取证书及私钥文件，或文件超过 64 KB。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取证书及私钥文件，或文件超过 64 KB。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to read the certificate or private key file, or file exceeds 64 KB."
+          }
+        }
+      }
+    },
+    "证书及私钥文件格式不受支持。需要 DER PKCS#7 证书链和 P-256 PKCS#8 私钥，或证书链、DER 叶证书和 X9.63 私钥。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书及私钥文件格式不受支持。需要 DER PKCS#7 证书链和 P-256 PKCS#8 私钥，或证书链、DER 叶证书和 X9.63 私钥。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsupported certificate or private key file format. Provide a DER PKCS#7 chain and P-256 PKCS#8 private key, or a chain, DER leaf certificate and X9.63 private key."
+          }
+        }
+      }
+    },
+    "证书链中没有与私钥匹配的叶证书，或所选叶证书不在证书链中。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "证书链中没有与私钥匹配的叶证书，或所选叶证书不在证书链中。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No leaf certificate matches the private key, or the selected leaf is not in the chain."
+          }
+        }
+      }
+    },
+    "检测到重复文件或多组可能的证书材料，请只选择一组。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测到重复文件或多组可能的证书材料，请只选择一组。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate files or multiple possible certificate sets detected. Select only one set."
+          }
+        }
+      }
+    },
+    "本机 Keychain 操作失败（{1}）。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机 Keychain 操作失败（{1}）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Keychain operation failed ({1})."
+          }
+        }
+      }
+    },
+    "停止连接并留在当前设置页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止连接并留在当前设置页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the connection and remain on this settings page"
+          }
+        }
+      }
+    },
+    "启动连接并留在当前设置页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动连接并留在当前设置页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start the connection and remain on this settings page"
+          }
+        }
+      }
+    },
+    "启动 CarPlay": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动 CarPlay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start CarPlay"
+          }
+        }
+      }
+    },
+    "未配置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not configured"
+          }
+        }
+      }
+    },
+    "验证中…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证中…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifying…"
+          }
+        }
+      }
+    },
+    "当前无法导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前无法导入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot Import"
+          }
+        }
+      }
+    },
+    "请先停止连接或完成当前文件选择。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先停止连接或完成当前文件选择。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the connection or finish the current file selection first."
+          }
+        }
+      }
+    },
+    "请先停止连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先停止连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the connection first"
+          }
+        }
+      }
+    },
+    "清除": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
+    "清除未完整完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除未完整完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Incomplete"
+          }
+        }
+      }
+    },
+    "请先停止连接或等待导入完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先停止连接或等待导入完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the connection or wait for import to finish first"
+          }
+        }
+      }
+    },
+    "导入成功": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入成功"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Successful"
+          }
+        }
+      }
+    },
+    "已通过证书与私钥本地匹配检查并保存。实际 CarPlay 认证仍需连接验证。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已通过证书与私钥本地匹配检查并保存。实际 CarPlay 认证仍需连接验证。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certificate and private key passed the local match check and were saved. CarPlay authentication still requires a connection test."
+          }
+        }
+      }
+    },
+    "导入失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Failed"
+          }
+        }
+      }
+    },
+    "请通过设置中的 MFi 证书管理导入合法证书。错误代码：{1}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请通过设置中的 MFi 证书管理导入合法证书。错误代码：{1}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import a valid MFi certificate in Settings → MFi Certificate Management. Error code: {1}"
+          }
+        }
+      }
+    },
+    "等待启动 CarPlay": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待启动 CarPlay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to start CarPlay"
+          }
+        }
+      }
+    },
+    "正在协商 CarLife 显示分辨率…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在协商 CarLife 显示分辨率…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Negotiating CarLife display resolution…"
+          }
+        }
+      }
+    },
+    "正在启动 CarPlay…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动 CarPlay…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting CarPlay…"
+          }
+        }
+      }
+    },
+    "启动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start"
+          }
+        }
+      }
+    },
+    "停止": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        }
+      }
+    },
+    "访问地址：{1}": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access address: {1}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问地址：{1}"
+          }
+        }
+      }
+    },
+    "复制访问地址": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy access address"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制访问地址"
           }
         }
       }

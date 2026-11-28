@@ -15,6 +15,8 @@ struct ReceiverConfiguration {
     var videoCodec: VideoCodec = .h264
     var wifiChannel: UInt8 = 36
     var audioEnabled = true
+    // Conservative default for callers without explicit receiver topology.
+    var mayLoopBackLocally = true
     var browserAudio = false
     var airPlayStreamID: UUID?
     var rightHandDrive = false
@@ -57,6 +59,11 @@ struct ReceiverConfiguration {
         return DynamicDisplayWire.experimentalProfile(enabled: experimentalBrowserViewAreas, browserOnly: browserOnlyOutput, width: width, height: height, displayUUID: CarPlayInfo.displayID)
     }
     var browserPerformance: BrowserPerformance = .auto
+    /// In browser + follow-screen mode, wait for the receiver's viewport report before
+    /// advertising CarPlay so the first /info response can declare the real display area.
+    var browserAutoAdaptBeforeCarPlay = false
+    var browserGeometryBounds: [DisplayGeometry.Size] = []
+    var displayRatioUnsupported = false
     var showTouches = false
     /// Square PNG (≤ 192 px) for the car button on the CarPlay home screen; nil hides it.
     var oemIconPNG: Data?
@@ -87,25 +94,23 @@ struct ReceiverConfiguration {
         let height: Int
         var title: String { "\(width):\(height)" }
     }
+    /// Built-in choices. Device-native ratios are added from verified receiver reports.
     static let aspectRatios = [
-        AspectRatio(width: 16, height: 9), .init(width: 16, height: 10),
-        .init(width: 4, height: 3), .init(width: 3, height: 2), .init(width: 1, height: 1),
-        .init(width: 21, height: 9), .init(width: 32, height: 9),
-        .init(width: 3, height: 1), .init(width: 4, height: 1),
-        .init(width: 3, height: 4), .init(width: 9, height: 16), .init(width: 9, height: 19),
-        .init(width: 9, height: 20), .init(width: 1, height: 3), .init(width: 1, height: 4),
-        .init(width: 18, height: 9), .init(width: 19, height: 9), .init(width: 20, height: 9)
+        AspectRatio(width: 32, height: 9), .init(width: 21, height: 9),
+        .init(width: 16, height: 9), .init(width: 16, height: 10),
+        .init(width: 4, height: 3), .init(width: 4, height: 1),
+        .init(width: 3, height: 2), .init(width: 3, height: 1),
+        .init(width: 1, height: 1), .init(width: 9, height: 16), .init(width: 3, height: 4)
     ]
 
-    /// Treat the resolution tier as a pixel budget. Align both edges for video encoding.
-    static func fixedDisplaySize(area: Int, ratio: AspectRatio, maxWidth: Int, maxHeight: Int) -> (Int, Int) {
-        let aspect = min(max(Double(ratio.width) / Double(ratio.height), 320 / Double(maxHeight)),
-                         Double(maxWidth) / 320)
-        let height = max(320, 320 / aspect, min(Double(maxHeight), Double(maxWidth) / aspect,
-                                               (Double(area) / aspect).squareRoot()))
-        return (min(maxWidth, max(320, Int(height * aspect / 2) * 2)),
-                min(maxHeight, max(320, Int(height / 2) * 2)))
+    static func aspectRatios(discovered: [(width: Int, height: Int)]) -> [AspectRatio] {
+        let builtIn = aspectRatios.map { DisplayGeometry.Ratio(width: $0.width, height: $0.height) }
+        let learned = discovered.compactMap { DisplayGeometry.reducedRatio(width: $0.width, height: $0.height) }
+        return DisplayGeometry.orderedRatios(builtIn: builtIn, discovered: learned).map {
+            AspectRatio(width: $0.width, height: $0.height)
+        }
     }
+
 
     static func wifiIPv4Address() -> String? {
         localIPv4Addresses(interface: "en0").first
@@ -153,6 +158,7 @@ struct ReceiverConfiguration {
         if requiresLocalAddress && !Self.localIPv4Addresses().contains(address) {
             throw ConfigurationError(CWL("请选择属于本机当前网络连接的 IP 地址。"))
         }
+        guard !displayRatioUnsupported else { throw ConfigurationError(CWL("当前协议无法保持所选画面比例，请选择其他比例或连接模式。")) }
         // Fixed presets or a size that follows the head unit: even, within 320…3840 per side and
         // at most 4K in area; the requested CarPlay frame rate is 30–60 in steps of 5.
         guard (320...3840).contains(width), (320...3840).contains(height), width % 2 == 0, height % 2 == 0,
